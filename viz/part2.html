@@ -1,0 +1,296 @@
+
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+(function () {
+  // ---- scene data (inlined; CSP blocks fetch) ----
+  const DATA = JSON.parse(document.getElementById("scene-data").textContent);
+  const META = DATA.meta;
+  const RE = META.earthRadiusKm, MU = META.muKm3S2, J2 = META.j2;
+  const UNIT = 1000;                 // km per render unit
+  const MAXDAY = 1095;               // 3-year window
+  const Cd = 2.2, REENTRY = RE + 120;
+
+  // ---- Vallado piecewise-exponential atmosphere (mirror of AtmosphericDrag.cs) ----
+  const DTAB = [
+    [0,1.225,7.249],[150,2.070e-9,22.523],[180,5.464e-10,29.740],[200,2.789e-10,37.105],
+    [250,7.248e-11,45.546],[300,2.418e-11,53.628],[350,9.518e-12,53.298],[400,3.725e-12,58.515],
+    [450,1.585e-12,60.828],[500,6.967e-13,63.822],[600,1.454e-13,71.835],[700,3.614e-14,88.667],
+    [800,1.170e-14,124.64],[900,5.245e-15,181.05],[1000,3.019e-15,268.00]
+  ];
+  function density(alt, solar) {
+    if (alt < 0) alt = 0;
+    let row = DTAB.length - 1;
+    for (let i = 0; i < DTAB.length - 1; i++) if (alt < DTAB[i + 1][0]) { row = i; break; }
+    const r = DTAB[row][1] * Math.exp(-(alt - DTAB[row][0]) / DTAB[row][2]);
+    return alt >= 150 ? r * solar : r;
+  }
+  const muM = MU * 1e9;
+  function decayKmPerDay(aKm, aoverm, solar) {
+    const rho = density(aKm - RE, solar);
+    const da = -Cd * aoverm * rho * Math.sqrt(muM * aKm * 1000) / 1000; // km/s (<0)
+    return da * 86400;
+  }
+
+  // ---- point-cloud shader ----
+  const VERT = `
+    attribute float aAlpha; attribute vec3 aCol; attribute float aSize;
+    uniform float uScale; varying float vA; varying vec3 vC;
+    void main(){ vA=aAlpha; vC=aCol; vec4 mv=modelViewMatrix*vec4(position,1.0);
+      gl_PointSize=aSize*(uScale/max(-mv.z,0.1)); gl_Position=projectionMatrix*mv; }`;
+  const FRAG = `
+    varying float vA; varying vec3 vC;
+    void main(){ if(vA<0.02) discard; vec2 d=gl_PointCoord-vec2(0.5); float r2=dot(d,d);
+      if(r2>0.25) discard; float a=smoothstep(0.25,0.02,r2)*vA; gl_FragColor=vec4(vC,a); }`;
+
+  function makeCloud(rows, aoverm, isNail) {
+    const N = rows.length;
+    const c = {
+      N, aoverm, isNail,
+      a0: new Float64Array(N), e: new Float32Array(N), inc: new Float32Array(N),
+      raan0: new Float64Array(N), argp0: new Float64Array(N), m0: new Float64Array(N),
+      n0: new Float64Array(N), raanD: new Float64Array(N), argpD: new Float64Array(N),
+      cosi: new Float32Array(N), sini: new Float32Array(N),
+      aCur: new Float64Array(N), alive: new Uint8Array(N),
+      pos: new Float32Array(3 * N), col: new Float32Array(3 * N),
+      al: new Float32Array(N), sz: new Float32Array(N)
+    };
+    for (let i = 0; i < N; i++) {
+      const r = rows[i], a = r[0], e = r[1], inc = r[2];
+      c.a0[i] = a; c.e[i] = e; c.inc[i] = inc; c.raan0[i] = r[3]; c.argp0[i] = r[4]; c.m0[i] = r[5];
+      const n = Math.sqrt(MU / (a * a * a)), p = a * (1 - e * e), rp = RE / p;
+      const f = 1.5 * J2 * rp * rp * n, s2 = Math.sin(inc) * Math.sin(inc);
+      c.n0[i] = n; c.raanD[i] = -f * Math.cos(inc); c.argpD[i] = f * (2 - 2.5 * s2);
+      c.cosi[i] = Math.cos(inc); c.sini[i] = Math.sin(inc);
+      c.aCur[i] = a; c.alive[i] = 1;
+      c.sz[i] = isNail ? 3.8 : 2.5;
+      if (!isNail) { c.col[3 * i] = 0.50; c.col[3 * i + 1] = 0.66; c.col[3 * i + 2] = 0.82; c.al[i] = 0.5; }
+      else c.al[i] = 0.8;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(c.pos, 3));
+    g.setAttribute("aCol", new THREE.BufferAttribute(c.col, 3));
+    g.setAttribute("aAlpha", new THREE.BufferAttribute(c.al, 1));
+    g.setAttribute("aSize", new THREE.BufferAttribute(c.sz, 1));
+    const m = new THREE.ShaderMaterial({
+      uniforms: { uScale: { value: 240.0 } }, vertexShader: VERT, fragmentShader: FRAG,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+    });
+    c.geom = g; c.points = new THREE.Points(g, m);
+    return c;
+  }
+
+  // amber(high) -> orange -> red(low) ramp over 120..600 km
+  function rampColor(alt, out, o) {
+    let t = (alt - 120) / (600 - 120); if (t < 0) t = 0; else if (t > 1) t = 1;
+    let r, g, b;
+    if (t < 0.5) { const u = t / 0.5; r = 1.0; g = (0.271 + (0.549 - 0.271) * u); b = (0.227 + (0.259 - 0.227) * u); }
+    else { const u = (t - 0.5) / 0.5; r = 1.0; g = (0.549 + (0.812 - 0.549) * u); b = (0.259 + (0.361 - 0.259) * u); }
+    out[o] = r; out[o + 1] = g; out[o + 2] = b;
+  }
+
+  const nails = makeCloud(DATA.nails, META.nailAoverM, true);
+  const cat = makeCloud(DATA.cat, META.catAoverM, false);
+
+  // ---- integration state ----
+  let curDay = 0;
+  function resetClouds() {
+    for (const c of [nails, cat]) { c.aCur.set(c.a0); c.alive.fill(1); }
+    curDay = 0;
+  }
+  function stepDay(c, solar) {
+    for (let i = 0; i < c.N; i++) {
+      if (!c.alive[i]) continue;
+      const a = c.aCur[i] + decayKmPerDay(c.aCur[i], c.aoverm, solar);
+      if (a <= REENTRY) { c.alive[i] = 0; c.aCur[i] = REENTRY - 1; } else c.aCur[i] = a;
+    }
+  }
+  function integrateTo(day, solar) {
+    if (day < curDay) resetClouds();
+    while (curDay < day) { stepDay(nails, solar); stepDay(cat, solar); curDay++; }
+  }
+
+  // position update; returns nail stats {frac, meanAlt}
+  function updatePositions(c, Tsec) {
+    let aliveN = 0, altSum = 0;
+    for (let i = 0; i < c.N; i++) {
+      const e = c.e[i], a = c.aCur[i];
+      const M = c.m0[i] + c.n0[i] * Tsec;
+      const nu = M + 2 * e * Math.sin(M) + 1.25 * e * e * Math.sin(2 * M);
+      const raan = c.raan0[i] + c.raanD[i] * Tsec, u = c.argp0[i] + c.argpD[i] * Tsec + nu;
+      const rKm = a * (1 - e * e) / (1 + e * Math.cos(nu));
+      const rr = rKm / UNIT;
+      const cu = Math.cos(u), su = Math.sin(u), cO = Math.cos(raan), sO = Math.sin(raan), ci = c.cosi[i];
+      const x = rr * (cu * cO - su * sO * ci), y = rr * (cu * sO + su * cO * ci), z = rr * (su * c.sini[i]);
+      c.pos[3 * i] = x; c.pos[3 * i + 1] = z; c.pos[3 * i + 2] = -y; // pole = +Y
+      if (c.isNail) {
+        if (c.alive[i]) { rampColor(rKm - RE, c.col, 3 * i); c.al[i] = 0.8; aliveN++; altSum += (rKm - RE); }
+        else c.al[i] = 0.0;
+      }
+    }
+    c.geom.attributes.position.needsUpdate = true;
+    if (c.isNail) { c.geom.attributes.aCol.needsUpdate = true; c.geom.attributes.aAlpha.needsUpdate = true; }
+    return { frac: aliveN / c.N, meanAlt: aliveN ? altSum / aliveN : 0 };
+  }
+
+  // ---- survival curve (for sparkline) ----
+  let survival = null;
+  function computeSurvival(solar) {
+    const N = nails.N, a = Float64Array.from(nails.a0), alv = new Uint8Array(N).fill(1);
+    const curve = new Float32Array(MAXDAY + 1); let n = N; curve[0] = 1;
+    for (let d = 1; d <= MAXDAY; d++) {
+      for (let i = 0; i < N; i++) {
+        if (!alv[i]) continue;
+        const aa = a[i] + decayKmPerDay(a[i], nails.aoverm, solar);
+        if (aa <= REENTRY) { alv[i] = 0; n--; } else a[i] = aa;
+      }
+      curve[d] = n / N;
+    }
+    return curve;
+  }
+
+  // ---- three.js scene ----
+  const mount = document.getElementById("scene");
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setClearColor(0x05070d, 1);
+  mount.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
+
+  // stars
+  (function () {
+    const n = 1400, p = new Float32Array(3 * n);
+    for (let i = 0; i < n; i++) {
+      const th = Math.random() * 6.283, ph = Math.acos(2 * Math.random() - 1), R = 300;
+      p[3 * i] = R * Math.sin(ph) * Math.cos(th); p[3 * i + 1] = R * Math.cos(ph); p[3 * i + 2] = R * Math.sin(ph) * Math.sin(th);
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(p, 3));
+    scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0x8fa6c4, size: 0.9, sizeAttenuation: false, transparent: true, opacity: 0.6 })));
+  })();
+
+  // earth
+  const ER = RE / UNIT;
+  const earth = new THREE.Mesh(
+    new THREE.SphereGeometry(ER, 64, 48),
+    new THREE.MeshPhongMaterial({ color: 0x0e2d4e, emissive: 0x05121f, specular: 0x1b4066, shininess: 14 })
+  );
+  scene.add(earth);
+  scene.add(new THREE.AmbientLight(0x2a3a52, 1.0));
+  const sun = new THREE.DirectionalLight(0xdfe9ff, 1.15); sun.position.set(5, 2.5, 4); scene.add(sun);
+
+  // graticule
+  (function () {
+    const segs = [], R = ER * 1.002, ring = (fn) => { const pts = []; for (let k = 0; k <= 96; k++) pts.push(fn(k / 96 * 6.2832)); return pts; };
+    const add = (pts) => { for (let k = 0; k < pts.length - 1; k++) segs.push(pts[k], pts[k + 1]); };
+    for (let j = 1; j < 6; j++) { const lat = (j / 6 - 0.5) * Math.PI, r = R * Math.cos(lat), y = R * Math.sin(lat); add(ring(t => new THREE.Vector3(r * Math.cos(t), y, r * Math.sin(t)))); }
+    for (let j = 0; j < 12; j++) { const lo = j / 12 * Math.PI; add(ring(t => new THREE.Vector3(R * Math.cos(t) * Math.cos(lo), R * Math.sin(t), R * Math.cos(t) * Math.sin(lo)))); }
+    const g = new THREE.BufferGeometry().setFromPoints(segs);
+    scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x2f5578, transparent: true, opacity: 0.45 })));
+  })();
+
+  // atmosphere glow
+  scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(ER * 1.14, 48, 32),
+    new THREE.ShaderMaterial({
+      side: THREE.BackSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: `varying vec3 vN; void main(){ vN=normalize(normalMatrix*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+      fragmentShader: `varying vec3 vN; void main(){ float i=pow(0.72-dot(vN,vec3(0.0,0.0,1.0)),2.6); i=clamp(i,0.0,1.0); gl_FragColor=vec4(0.30,0.63,1.0,1.0)*i;}`
+    })
+  ));
+
+  scene.add(cat.points); scene.add(nails.points);
+
+  // ---- camera controls ----
+  let radius = 21, theta = 0.6, phi = 1.12, dragging = false, px = 0, py = 0, lastActive = -1;
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function setCam() {
+    camera.position.set(radius * Math.sin(phi) * Math.cos(theta), radius * Math.cos(phi), radius * Math.sin(phi) * Math.sin(theta));
+    camera.lookAt(0, 0, 0);
+  }
+  const el = renderer.domElement;
+  el.addEventListener("pointerdown", e => { dragging = true; px = e.clientX; py = e.clientY; lastActive = performance.now(); el.setPointerCapture(e.pointerId); });
+  el.addEventListener("pointermove", e => {
+    if (!dragging) return;
+    theta -= (e.clientX - px) * 0.005; phi -= (e.clientY - py) * 0.005;
+    phi = Math.max(0.15, Math.min(3.0, phi)); px = e.clientX; py = e.clientY; lastActive = performance.now();
+  });
+  el.addEventListener("pointerup", () => dragging = false);
+  el.addEventListener("wheel", e => { e.preventDefault(); radius = Math.max(8.5, Math.min(120, radius * (1 + Math.sign(e.deltaY) * 0.08))); lastActive = performance.now(); }, { passive: false });
+
+  function resize() {
+    const w = mount.clientWidth || innerWidth, h = mount.clientHeight || innerHeight;
+    renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+  addEventListener("resize", resize); resize();
+
+  // ---- UI ----
+  const $ = id => document.getElementById(id);
+  let simDay = 0, playing = !reduced, dps = 5, solar = 1;
+  const nf = new Intl.NumberFormat("en-US");
+  $("scenario").textContent = `${nf.format(META.nailCount)} nails · ${META.altKm} km × ${META.incDeg}° · σ=${META.dispersalSigmaMS} m/s tumbling dump`;
+  survival = computeSurvival(solar);
+
+  const slider = $("time"); slider.max = MAXDAY;
+  function setSliderFill() { slider.style.setProperty("--pct", (100 * simDay / MAXDAY) + "%"); }
+  slider.addEventListener("input", () => { simDay = +slider.value; playing = false; $("play").classList.remove("on"); $("play").textContent = "▶ Play"; });
+
+  $("play").addEventListener("click", () => {
+    if (simDay >= MAXDAY) simDay = 0;
+    playing = !playing; $("play").classList.toggle("on", playing);
+    $("play").textContent = playing ? "❚❚ Pause" : "▶ Play";
+  });
+  $("reset").addEventListener("click", () => { simDay = 0; playing = true; $("play").classList.add("on"); $("play").textContent = "❚❚ Pause"; });
+  document.querySelectorAll("#speed button").forEach(b => b.addEventListener("click", () => {
+    dps = +b.dataset.dps; document.querySelectorAll("#speed button").forEach(x => x.classList.remove("on")); b.classList.add("on");
+  }));
+  document.querySelectorAll("#solar button").forEach(b => b.addEventListener("click", () => {
+    solar = +b.dataset.s; document.querySelectorAll("#solar button").forEach(x => x.classList.remove("on")); b.classList.add("on");
+    survival = computeSurvival(solar); resetClouds(); // re-derive decay under new activity
+  }));
+
+  // ---- sparkline ----
+  const sc = $("spark"), sx = sc.getContext("2d");
+  function drawSpark() {
+    const W = sc.width, H = sc.height; sx.clearRect(0, 0, W, H);
+    sx.beginPath(); sx.moveTo(0, H);
+    for (let d = 0; d <= MAXDAY; d++) sx.lineTo(d / MAXDAY * W, H - survival[d] * (H - 4) - 2);
+    sx.lineTo(W, H); sx.closePath();
+    const grd = sx.createLinearGradient(0, 0, 0, H); grd.addColorStop(0, "rgba(255,140,66,.35)"); grd.addColorStop(1, "rgba(255,140,66,0)");
+    sx.fillStyle = grd; sx.fill();
+    sx.beginPath();
+    for (let d = 0; d <= MAXDAY; d++) { const X = d / MAXDAY * W, Y = H - survival[d] * (H - 4) - 2; d ? sx.lineTo(X, Y) : sx.moveTo(X, Y); }
+    sx.strokeStyle = "#ffcf5c"; sx.lineWidth = 1.6; sx.stroke();
+    const mx = simDay / MAXDAY * W;
+    sx.strokeStyle = "rgba(77,166,255,.9)"; sx.lineWidth = 1; sx.beginPath(); sx.moveTo(mx, 0); sx.lineTo(mx, H); sx.stroke();
+  }
+
+  // ---- loop ----
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (playing) { simDay += dps * dt; if (simDay >= MAXDAY) { simDay = MAXDAY; playing = false; $("play").classList.remove("on"); $("play").textContent = "▶ Play"; } }
+    integrateTo(Math.floor(simDay), solar);
+    const st = updatePositions(nails, simDay * 86400); updatePositions(cat, simDay * 86400);
+
+    if (!dragging && !reduced) theta += 0.0007;
+    setCam();
+    renderer.render(scene, camera);
+
+    // HUD
+    $("t-elapsed").innerHTML = `${nf.format(Math.floor(simDay))}<small> d</small>`;
+    $("t-alive").textContent = nf.format(Math.round(st.frac * META.nailCount));
+    $("t-alt").innerHTML = st.meanAlt ? `${Math.round(st.meanAlt)}<small> km</small>` : `—`;
+    $("t-decayed").innerHTML = `${((1 - st.frac) * 100).toFixed(1)}<small> %</small>`;
+    $("c-main").textContent = `Year ${(simDay / 365.25).toFixed(2)}`;
+    $("c-sub").textContent = `day ${Math.floor(simDay)} / ${MAXDAY}`;
+    slider.value = simDay; setSliderFill();
+    drawSpark();
+    requestAnimationFrame(frame);
+  }
+  $("play").classList.toggle("on", playing); $("play").textContent = playing ? "❚❚ Pause" : "▶ Play";
+  setSliderFill(); requestAnimationFrame(frame);
+})();
+</script>

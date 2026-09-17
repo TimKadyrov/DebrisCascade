@@ -1,0 +1,149 @@
+<title>Nail Cloud Orbital Decay</title>
+<style>
+  :root{
+    --bg:#05070d; --panel:rgba(12,18,30,.82); --panel-line:rgba(90,140,200,.22);
+    --ink:#e7eef8; --ink-dim:#9fb2cc; --ink-faint:#647a99;
+    --cyan:#4da6ff; --amber:#ffcf5c; --orange:#ff8c42; --red:#ff453a;
+    --steel:#7fa8d0; --good:#39d98a;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);overflow:hidden;
+    -webkit-font-smoothing:antialiased}
+  #scene{position:fixed;inset:0;touch-action:none}
+  canvas{display:block}
+
+  .hud{position:fixed;z-index:5;pointer-events:none}
+  .panel{background:var(--panel);border:1px solid var(--panel-line);border-radius:12px;
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);pointer-events:auto}
+
+  /* top-left identity + telemetry */
+  #topleft{top:calc(14px + env(safe-area-inset-top,0px));left:14px;max-width:min(340px,72vw)}
+  #topleft .panel{padding:14px 16px}
+  .eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--cyan);margin:0 0 6px}
+  h1{font-size:20px;line-height:1.1;margin:0 0 4px;font-weight:600;text-wrap:balance}
+  .sub{font-size:12px;color:var(--ink-dim);margin:0;line-height:1.45}
+
+  .tele{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;
+    font-family:var(--mono)}
+  .tele .k{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+  .tele .v{font-size:16px;font-variant-numeric:tabular-nums;line-height:1.15;margin-top:1px}
+  .tele .v small{font-size:10px;color:var(--ink-dim);font-weight:400}
+  #spark{margin-top:12px;width:100%;height:44px;display:block;border-radius:6px;
+    background:rgba(5,9,16,.5)}
+  .sparklab{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;
+    letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);margin-top:4px}
+
+  /* top-right legend */
+  #legend{top:calc(14px + env(safe-area-inset-top,0px));right:14px}
+  #legend .panel{padding:12px 14px;min-width:150px}
+  .legttl{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-faint);margin:0 0 8px}
+  .ramp{height:9px;border-radius:5px;margin-bottom:5px;
+    background:linear-gradient(90deg,var(--red),var(--orange),var(--amber))}
+  .ramplab{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9.5px;
+    color:var(--ink-dim)}
+  .legrow{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:11.5px;color:var(--ink-dim)}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none;box-shadow:0 0 6px currentColor}
+
+  /* bottom control deck */
+  #deck{position:fixed;left:50%;transform:translateX(-50%);z-index:6;
+    bottom:calc(14px + env(safe-area-inset-bottom,0px));width:min(760px,calc(100vw - 28px))}
+  #deck .panel{padding:12px 16px 14px}
+  .row{display:flex;align-items:center;gap:12px}
+  .clock{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .clock .big{font-size:19px}
+  .clock .lil{font-size:11px;color:var(--ink-dim)}
+  #time{flex:1;-webkit-appearance:none;appearance:none;height:5px;border-radius:3px;
+    background:linear-gradient(90deg,var(--cyan) 0%,var(--cyan) var(--pct,0%),rgba(120,150,190,.25) var(--pct,0%));
+    outline:none;cursor:pointer}
+  #time::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+    background:#eaf3ff;border:2px solid var(--cyan);cursor:grab;box-shadow:0 0 8px rgba(77,166,255,.7)}
+  #time::-moz-range-thumb{width:16px;height:16px;border:2px solid var(--cyan);background:#eaf3ff;border-radius:50%}
+  .btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px;align-items:center}
+  button{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--ink);
+    background:rgba(30,44,66,.6);border:1px solid var(--panel-line);border-radius:7px;
+    padding:6px 10px;cursor:pointer;transition:.12s}
+  button:hover{border-color:var(--cyan);color:#fff}
+  button.on{background:var(--cyan);border-color:var(--cyan);color:#04121f;font-weight:600}
+  button:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+  #play{min-width:78px}
+  .seg{display:inline-flex;border:1px solid var(--panel-line);border-radius:7px;overflow:hidden}
+  .seg button{border:0;border-radius:0;border-left:1px solid var(--panel-line)}
+  .seg button:first-child{border-left:0}
+  .spacer{flex:1}
+  .grouplab{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--ink-faint);margin-right:2px}
+
+  .credit{position:fixed;bottom:6px;right:12px;z-index:4;font-family:var(--mono);font-size:9px;
+    letter-spacing:.1em;color:var(--ink-faint);pointer-events:none;text-transform:uppercase}
+
+  @media (max-width:560px){
+    #legend{display:none}
+    #topleft{max-width:calc(100vw - 28px)}
+    .clock .big{font-size:16px}
+  }
+</style>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<div id="scene"></div>
+
+<div class="hud" id="topleft">
+  <div class="panel">
+    <p class="eyebrow">SpaceWars · Debris Propagation</p>
+    <h1>Barrel of Nails in LEO</h1>
+    <p class="sub" id="scenario">Loading scene…</p>
+    <div class="tele">
+      <div><div class="k">Mission clock</div><div class="v" id="t-elapsed">0<small> d</small></div></div>
+      <div><div class="k">Nails on orbit</div><div class="v" id="t-alive">—</div></div>
+      <div><div class="k">Mean altitude</div><div class="v" id="t-alt">—<small> km</small></div></div>
+      <div><div class="k">Re-entered</div><div class="v" id="t-decayed">0<small> %</small></div></div>
+    </div>
+    <canvas id="spark" width="600" height="88"></canvas>
+    <div class="sparklab"><span>Fraction on orbit</span><span id="spark-end">3 yr →</span></div>
+  </div>
+</div>
+
+<div class="hud" id="legend">
+  <div class="panel">
+    <p class="legttl">Nail altitude</p>
+    <div class="ramp"></div>
+    <div class="ramplab"><span>120 km</span><span>600 km</span></div>
+    <div class="legrow"><span class="dot" style="color:#7fa8d0;background:#7fa8d0"></span>Tracked catalog (live)</div>
+    <div class="legrow"><span class="dot" style="color:#ffcf5c;background:#ffcf5c"></span>Nail cloud (sampled)</div>
+  </div>
+</div>
+
+<div class="hud" id="deck">
+  <div class="panel">
+    <div class="row">
+      <div class="clock"><span class="big" id="c-main">Year 0.00</span> <span class="lil" id="c-sub">day 0</span></div>
+      <input type="range" id="time" min="0" max="1095" step="1" value="0" aria-label="Mission time in days">
+    </div>
+    <div class="btns">
+      <button id="play" class="on">▶ Play</button>
+      <button id="reset">⟲ Reset</button>
+      <span class="grouplab">Speed</span>
+      <div class="seg" id="speed">
+        <button data-dps="0.5">½ d/s</button>
+        <button data-dps="5" class="on">5 d/s</button>
+        <button data-dps="30">1 mo/s</button>
+        <button data-dps="120">4 mo/s</button>
+      </div>
+      <span class="spacer"></span>
+      <span class="grouplab">Solar</span>
+      <div class="seg" id="solar">
+        <button data-s="0.5">Min</button>
+        <button data-s="1" class="on">Nom</button>
+        <button data-s="4">Max</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="credit">SpaceWars · J2 + drag · sampled cloud</div>
+
+<script id="scene-data" type="application/json">

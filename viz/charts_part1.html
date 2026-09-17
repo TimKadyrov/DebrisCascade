@@ -1,0 +1,83 @@
+<title>Kessler Analysis</title>
+<style>
+  :root{
+    --bg:#06080e; --panel:#0d1420; --line:rgba(90,140,200,.18); --ink:#e7eef8;
+    --dim:#9fb2cc; --faint:#647a99; --cyan:#4da6ff; --amber:#ffcf5c; --orange:#ff8c42;
+    --red:#ff5a52; --green:#39d98a;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    --sans:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1100px;margin:0 auto;padding-block:28px;padding-left:16px;padding-right:16px}
+  header{margin-bottom:22px}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.24em;text-transform:uppercase;
+    color:var(--cyan);margin:0 0 6px}
+  h1{font-size:26px;line-height:1.1;margin:0 0 8px;font-weight:600;letter-spacing:-.01em;text-wrap:balance}
+  .lede{font-size:14px;color:var(--dim);margin:0;max-width:64ch;line-height:1.5}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+  @media (max-width:760px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 16px 14px;
+    display:flex;flex-direction:column;min-width:0}
+  .card h2{font-size:14px;margin:0 0 2px;font-weight:600}
+  .card .tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--faint);margin:0 0 12px}
+  .chartbox{position:relative;height:230px}
+  .finding{font-size:12px;color:var(--dim);margin:12px 0 0;line-height:1.45;
+    border-top:1px solid var(--line);padding-top:10px}
+  .finding b{color:var(--ink);font-weight:600}
+  .verdict{margin-top:18px;background:linear-gradient(180deg,rgba(77,166,255,.08),rgba(77,166,255,.02));
+    border:1px solid var(--line);border-left:3px solid var(--cyan);border-radius:12px;padding:16px 18px}
+  .verdict p{margin:0;font-size:13.5px;line-height:1.55;color:var(--ink)}
+  .verdict .k{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--cyan);display:block;margin-bottom:6px}
+  footer{margin-top:20px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--faint);
+    text-transform:uppercase}
+</style>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">SpaceWars · Orbital Debris Model</p>
+    <h1>Does a barrel of nails end LEO?</h1>
+    <p class="lede">Four views from the model chain (CelesTrak catalog → CUDA propagation → NASA breakup →
+      box, discrete and conjunction cascades). The debris belt sits at the Kessler margin;
+      launch and removal policy decide which side of it we land on; a barrel of nails never moves that line.</p>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <h2>The belt is already at the margin</h2>
+      <p class="tag">50-yr evolution · no new launches</p>
+      <div class="chartbox"><canvas id="c1"></canvas></div>
+      <p class="finding" id="f1"></p>
+    </div>
+    <div class="card">
+      <h2>Launch traffic is the real tipping point</h2>
+      <p class="tag">50-yr growth vs launch rate · 900 km</p>
+      <div class="chartbox"><canvas id="c2"></canvas></div>
+      <p class="finding" id="f2"></p>
+    </div>
+    <div class="card">
+      <h2>Rational operators self-limit the runaway</h2>
+      <p class="tag">constant vs responsive launch · 500/yr</p>
+      <div class="chartbox"><canvas id="c3"></canvas></div>
+      <p class="finding" id="f3"></p>
+    </div>
+    <div class="card">
+      <h2>How many barrels to tip a band?</h2>
+      <p class="tag">50-yr growth vs barrels · 900 km</p>
+      <div class="chartbox"><canvas id="c4"></canvas></div>
+      <p class="finding" id="f4"></p>
+    </div>
+  </div>
+
+  <div class="verdict">
+    <p><span class="k">Verdict</span><span id="verdict"></span></p>
+  </div>
+  <footer id="foot">SpaceWars · model outputs</footer>
+</div>
+
+<script id="chart-data" type="application/json">

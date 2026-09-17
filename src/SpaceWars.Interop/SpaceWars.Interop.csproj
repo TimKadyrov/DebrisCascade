@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SpaceWars.Core\SpaceWars.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Ship the CUDA engine next to any consumer's executable. Content items flow to
+       the output of projects that reference this one. Built by src/SpaceWars.Native/build.bat. -->
+  <ItemGroup Condition="Exists('..\SpaceWars.Native\spacewars_cuda.dll')">
+    <Content Include="..\SpaceWars.Native\spacewars_cuda.dll">
+      <Link>spacewars_cuda.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

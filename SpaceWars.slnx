@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SpaceWars.Cli/SpaceWars.Cli.csproj" />
+    <Project Path="src/SpaceWars.Core/SpaceWars.Core.csproj" />
+    <Project Path="src/SpaceWars.Interop/SpaceWars.Interop.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SpaceWars.Tests/SpaceWars.Tests.csproj" />
+  </Folder>
+</Solution>
