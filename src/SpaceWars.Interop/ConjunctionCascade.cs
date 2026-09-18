@@ -112,12 +112,14 @@ public sealed class ConjunctionCascade
                 Add(Circular(alt, (30 + 120 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi),
                     MassFromLc(lc), AreaFromLc(lc), smallShare / sp, nail: false);
             }
+            // Large-object belt as near-unit-weight particles (not a few mega-weight ones —
+            // those blow up the cube-method variance; see MeasureCubeRate calibration).
             double largeShare = backgroundLargeTotal * f;
-            if (largeShare > 1e-6)
-            {
-                Add(Circular(alt, (30 + 120 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 180.0, 1.78, 0.85 * largeShare, false);
-                Add(Circular(alt, (30 + 120 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 2400.0, 18.0, 0.15 * largeShare, false);
-            }
+            int nPay = (int)Math.Round(0.85 * largeShare), nRb = (int)Math.Round(0.15 * largeShare);
+            for (int k = 0; k < nPay; k++)
+                Add(Circular(alt, (30 + 120 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 180.0, 1.78, 1.0, false);
+            for (int k = 0; k < nRb; k++)
+                Add(Circular(alt, (30 + 120 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 2400.0, 18.0, 1.0, false);
         }
     }
 

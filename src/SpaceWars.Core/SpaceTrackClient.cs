@@ -24,9 +24,22 @@ public sealed class SpaceTrackClient(string cacheDir)
     private const string SatcatQuery =
         "https://www.space-track.org/basicspacedata/query/class/satcat/predicates/NORAD_CAT_ID,OBJECT_TYPE,RCS_SIZE/format/csv";
 
-    public static bool HasCredentials =>
-        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPACETRACK_USER")) &&
-        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPACETRACK_PASS"));
+    private static readonly string[] CredTargets = { "SPACETRACK", "spacetrack", "www.space-track.org", "space-track.org" };
+
+    /// <summary>Credentials from env (SPACETRACK_USER/PASS) or a generic Windows credential named SPACETRACK.</summary>
+    public static (string User, string Pass)? GetCredentials()
+    {
+        string? u = Environment.GetEnvironmentVariable("SPACETRACK_USER");
+        string? p = Environment.GetEnvironmentVariable("SPACETRACK_PASS");
+        if (!string.IsNullOrEmpty(u) && !string.IsNullOrEmpty(p)) return (u, p);
+
+        foreach (var t in CredTargets)
+            if (WindowsCredential.TryRead(t, out string cu, out string cp) && cp.Length > 0)
+                return (string.IsNullOrEmpty(cu) ? (Environment.GetEnvironmentVariable("SPACETRACK_USER") ?? "") : cu, cp);
+        return null;
+    }
+
+    public static bool HasCredentials => GetCredentials() is not null;
 
     public async Task<Dictionary<int, SatcatRecord>> GetSatcatAsync(TimeSpan? maxCacheAge = null)
     {
@@ -37,10 +50,12 @@ public sealed class SpaceTrackClient(string cacheDir)
 
         if (!fresh)
         {
-            string? user = Environment.GetEnvironmentVariable("SPACETRACK_USER");
-            string? pass = Environment.GetEnvironmentVariable("SPACETRACK_PASS");
-            if (string.IsNullOrEmpty(user) || string.IsNullOrEmpty(pass))
-                throw new InvalidOperationException("Set SPACETRACK_USER and SPACETRACK_PASS to use Space-Track.");
+            var creds = GetCredentials();
+            if (creds is null)
+                throw new InvalidOperationException("No Space-Track credentials (env SPACETRACK_USER/PASS or a generic Windows credential 'SPACETRACK').");
+            (string user, string pass) = creds.Value;
+            if (string.IsNullOrEmpty(user))
+                throw new InvalidOperationException("Space-Track username missing (the stored credential has no username).");
 
             var handler = new HttpClientHandler { CookieContainer = new CookieContainer(), UseCookies = true };
             using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(120) };
