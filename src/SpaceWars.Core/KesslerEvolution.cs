@@ -129,7 +129,7 @@ public sealed class KesslerEvolution
         double largeIntactFraction = 0.15, double backgroundSmallTotal = 1_000_000,
         double backgroundLargeTotal = 8_000)
     {
-        // Observed payloads: placed at their real altitudes.
+        // Observed payloads (no SATCAT): split by a fixed large-intact fraction.
         foreach (var el in catalog)
         {
             int s = ShellOf(el.SemiMajorAxis - Constants.EarthRadiusKm);
@@ -137,21 +137,48 @@ public sealed class KesslerEvolution
             _n[s, 5] += largeIntactFraction;
             _n[s, 4] += 1.0 - largeIntactFraction;
         }
+        SeedBackground(backgroundSmallTotal, backgroundLargeTotal);
+    }
 
-        // Modelled populations placed by the realistic debris altitude profile (NOT the
-        // payload catalog): the 1–10 cm lethal-untracked field, and the large-object belt
-        // (spent rocket bodies, dead satellites, fragments) that TLE "active" omits.
+    /// <summary>Seed observed objects with SATCAT-derived masses, mapped to the nearest size class.</summary>
+    public void SeedFromCatalog(IReadOnlyList<CatalogObject> objects,
+        double backgroundSmallTotal = 1_000_000, double backgroundLargeTotal = 8_000)
+    {
+        foreach (var o in objects)
+        {
+            int s = ShellOf(o.Elements.SemiMajorAxis - Constants.EarthRadiusKm);
+            if (s < 0) continue;
+            _n[s, NearestSizeClass(o.MassKg)] += 1.0;
+        }
+        SeedBackground(backgroundSmallTotal, backgroundLargeTotal);
+    }
+
+    private int NearestSizeClass(double massKg)
+    {
+        int best = 0; double bestD = double.MaxValue;
+        double lm = Math.Log(Math.Max(massKg, 1e-6));
+        for (int c = 0; c < SizeClassCount; c++)
+        {
+            double d = Math.Abs(Math.Log(_cls[c].MassKg) - lm);
+            if (d < bestD) { bestD = d; best = c; }
+        }
+        return best;
+    }
+
+    private void SeedBackground(double backgroundSmallTotal, double backgroundLargeTotal)
+    {
+        // Modelled populations placed by the realistic debris altitude profile: the 1–10 cm
+        // lethal-untracked field and the large-object belt that the trackable catalog omits.
         var w = new double[_nShell]; double wsum = 0;
         for (int s = 0; s < _nShell; s++) { w[s] = DebrisEnvironment.SpatialWeight(_midAlt[s]); wsum += w[s]; }
         if (wsum <= 0) return;
-
         for (int s = 0; s < _nShell; s++)
         {
             double f = w[s] / wsum;
-            _n[s, 0] += 0.7 * backgroundSmallTotal * f;   // 1–3 cm
-            _n[s, 1] += 0.3 * backgroundSmallTotal * f;   // 3–10 cm
-            _n[s, 4] += 0.85 * backgroundLargeTotal * f;  // ~180 kg dead sats / debris
-            _n[s, 5] += 0.15 * backgroundLargeTotal * f;  // ~2.4 t rocket bodies
+            _n[s, 0] += 0.7 * backgroundSmallTotal * f;
+            _n[s, 1] += 0.3 * backgroundSmallTotal * f;
+            _n[s, 4] += 0.85 * backgroundLargeTotal * f;
+            _n[s, 5] += 0.15 * backgroundLargeTotal * f;
         }
     }
 

@@ -103,17 +103,30 @@ public sealed class DiscreteCascade
         double largeIntactFraction = 0.15, double backgroundSmallTotal = 1_000_000,
         int backgroundSuperParticles = 4000, double backgroundLargeTotal = 8_000)
     {
-        // Observed payloads at their real altitudes.
+        // Observed payloads at their real altitudes (no SATCAT: fixed large fraction).
         foreach (var el in catalog)
         {
             int s = ShellOf(el.SemiMajorAxis); if (s < 0) continue;
             bool big = _rng.NextDouble() < largeIntactFraction;
             Add(el, big ? 2400.0 : 180.0, big ? 18.0 : 1.78, 1.0, nail: false);
         }
+        SeedBackground(backgroundSmallTotal, backgroundSuperParticles, backgroundLargeTotal);
+    }
 
-        // Modelled background placed by the realistic debris altitude profile (peaks 800–1000 km),
-        // NOT the payload catalog: the 1–10 cm field AND the large-object belt (rocket bodies,
-        // dead sats, fragments) that TLE "active" omits.
+    /// <summary>Seed observed objects with SATCAT-derived masses/areas (per object).</summary>
+    public void SeedFromCatalog(IReadOnlyList<CatalogObject> objects,
+        double backgroundSmallTotal = 1_000_000, int backgroundSuperParticles = 4000, double backgroundLargeTotal = 8_000)
+    {
+        foreach (var o in objects)
+        {
+            if (ShellOf(o.Elements.SemiMajorAxis) < 0) continue;
+            Add(o.Elements, o.MassKg, o.AreaM2, 1.0, nail: false);
+        }
+        SeedBackground(backgroundSmallTotal, backgroundSuperParticles, backgroundLargeTotal);
+    }
+
+    private void SeedBackground(double backgroundSmallTotal, int backgroundSuperParticles, double backgroundLargeTotal)
+    {
         double lc0 = Math.Sqrt(LcEdges[0] * LcEdges[1]), lc1 = Math.Sqrt(LcEdges[1] * LcEdges[2]);
         var w = new double[_nShell]; double wsum = 0;
         for (int s = 0; s < _nShell; s++) { w[s] = DebrisEnvironment.SpatialWeight(_minAlt + (s + 0.5) * _binKm); wsum += w[s]; }

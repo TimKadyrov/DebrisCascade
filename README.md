@@ -42,6 +42,9 @@ dotnet test
 
 # Run the assessment against the live catalog
 dotnet run --project src/SpaceWars.Cli
+
+# Optional: fuller per-object RCS via Space-Track (falls back to CelesTrak if unset)
+export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # credentials read from the env only
 ```
 
 ### CLI flags
@@ -57,6 +60,7 @@ dotnet run --project src/SpaceWars.Cli
 | `--responsive [--loss-tol <frac>]` | economically rational launch (self-limiting) |
 | `--tipping` | critical launch-rate sweep |
 | `--barrel-threshold` | how many barrels tip a band |
+| `--calibrate` | cube-method rate calibration (geometric vs well-mixed) |
 | `--charts` / `--export <file>` | write data for the visualizations |
 
 ## Visualizations
@@ -72,6 +76,12 @@ dotnet run --project src/SpaceWars.Cli
 - Debris altitude profile is a stylized ORDEM/MASTER-like distribution (peak ~850 km);
   seeding it correctly is essential — tying it to the payload catalog understates Kessler.
 - Object masses/areas are class-representative (SATCAT/RCS refinement is future work).
-- Box model uses a well-mixed shell assumption (overcounts); the conjunction Cube method is
-  geometrically faithful but its absolute rate needs calibration vs a known event rate.
-  The two bracket the real near-critical margin.
+- Object masses/areas come from SATCAT: RCS as cross-section (CelesTrak numeric, or Space-Track
+  RCS_SIZE categories), mass from the NASA size↔mass law. CelesTrak's active feed is RCS-sparse
+  (~3% of the LEO set); Space-Track credentials give far fuller coverage.
+- Box model uses a well-mixed shell assumption; the conjunction Cube method is geometrically
+  faithful (real cross-shell crossings) BUT `--calibrate` shows its *absolute* rate is
+  cube-size-dependent with super-particles (λ∝1/V_cube variance), so it is **not quotable** as
+  implemented — use the box model for rates and the conjunction model for geometry. Converging
+  it needs near-unit-weight particles (~10⁶ objects, feasible on the GPU). Both bracket the real
+  near-critical margin.

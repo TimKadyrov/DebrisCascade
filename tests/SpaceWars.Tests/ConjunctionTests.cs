@@ -36,6 +36,32 @@ public class ConjunctionTests
     }
 
     [Fact]
+    public void Calibration_GivesRealisticEncounterSpeedAndFiniteFactor()
+    {
+        var c = new ConjunctionCascade(seed: 6);
+        c.SeedFromCatalog(Synth(4000, 600, 1000), backgroundSmallTotal: 2_000_000);
+        var (cube, vrel) = c.MeasureCubeRate(30 * 86400.0);
+        Assert.InRange(vrel / 1000.0, 3.0, 15.0);     // realistic LEO encounter speed [km/s]
+        double kin = c.MeasureKineticRate(30 * 86400.0, vrel);
+        Assert.True(cube > 0 && kin > 0);
+        Assert.InRange(cube / kin, 0.001, 100.0);     // finite, sane calibration factor
+    }
+
+    [Fact]
+    public void LaunchTraffic_DrivesGrowthInTheConjunctionModel()
+    {
+        double End(double rate)
+        {
+            var c = new ConjunctionCascade(seed: 4) { LaunchRatePerYear = rate, LaunchAltKm = 900 };
+            c.SeedFromCatalog(Synth(3000, 700, 1000));
+            var r = c.Run(horizonYears: 25, dtDays: 60);
+            return r.TotalObjects[^1];
+        }
+        // Sustained launch into a weakly-decaying band must leave more objects than none.
+        Assert.True(End(800) > End(0));
+    }
+
+    [Fact]
     public void EccentricObjects_CollideAcrossShells()
     {
         // Highly eccentric objects crossing many shells must still register collisions

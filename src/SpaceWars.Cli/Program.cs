@@ -43,10 +43,46 @@ else
     }
 }
 
-var catalog = tles.Select(t => t.ToElements())
-                  .Where(e => e.PerigeeAltitude < 2000 && e.PerigeeAltitude > 100)
-                  .ToList();
-Console.WriteLine($"  loaded {tles.Count:N0} objects, {catalog.Count:N0} in LEO (<2000 km perigee).\n");
+// SATCAT for per-object mass/area (RCS-derived). Space-Track (fuller RCS) if credentials are
+// set via SPACETRACK_USER/SPACETRACK_PASS, otherwise CelesTrak; CelesTrak is the fallback.
+Dictionary<int, SatcatRecord> satcat = new(); string satSrc = "none";
+if (opts.OfflineFile is null)
+{
+    try
+    {
+        if (SpaceTrackClient.HasCredentials) { satcat = await new SpaceTrackClient(dataDir).GetSatcatAsync(); satSrc = "Space-Track"; }
+        else { satcat = await new CelesTrakClient(dataDir).GetSatcatAsync(); satSrc = "CelesTrak"; }
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"  primary SATCAT source failed ({ex.Message});");
+        try { satcat = await new CelesTrakClient(dataDir).GetSatcatAsync(); satSrc = "CelesTrak (fallback)"; }
+        catch (Exception ex2) { Console.Error.WriteLine($"  SATCAT unavailable ({ex2.Message}); using default masses."); }
+    }
+}
+
+int withRcs = 0;
+var catalogObjects = new List<CatalogObject>();
+foreach (var t in tles)
+{
+    var el = t.ToElements();
+    if (!(el.PerigeeAltitude < 2000 && el.PerigeeAltitude > 100)) continue;
+    double mass = 180, area = 1.78; bool intact = true;
+    if (satcat.TryGetValue(t.NoradId, out var rec))
+    {
+        (mass, area) = Satcat.DeriveMassArea(rec);
+        intact = Satcat.IsIntact(rec.ObjectType);
+        if (rec.RcsM2.HasValue) withRcs++;
+    }
+    catalogObjects.Add(new CatalogObject(el, mass, area, intact));
+}
+var catalog = catalogObjects.Select(o => o.Elements).ToList();
+double meanArea = catalogObjects.Count > 0 ? catalogObjects.Average(o => o.AreaM2) : 5.0;
+double meanMass = catalogObjects.Count > 0 ? catalogObjects.Average(o => o.MassKg) : 180.0;
+Console.WriteLine($"  loaded {tles.Count:N0} objects, {catalog.Count:N0} in LEO (<2000 km perigee).");
+Console.WriteLine($"  SATCAT ({satSrc}): {satcat.Count:N0} records, {withRcs:N0} of the LEO set carry RCS " +
+                  $"({(catalog.Count > 0 ? 100.0 * withRcs / catalog.Count : 0):F0}%); " +
+                  $"derived mean cross-section {meanArea:F2} m², mean mass {meanMass:F0} kg.\n");
 
 // 2. Configure and deploy the barrel.
 var nail = new NailSpec();
@@ -93,13 +129,14 @@ Console.WriteLine($"  vs 260 kg satellite @ {opts.RelVelMS / 1000:F1} km/s: {sta
 Console.WriteLine($"  vs   3 kg cubesat   @ {opts.RelVelMS / 1000:F1} km/s: {cube}\n");
 
 // 4. Spatial-density flux.
-var flux = new SpatialDensityFlux { RelVelMetersPerSec = opts.RelVelMS, TargetAreaM2 = opts.TargetAreaM2 };
+double targetArea = opts.TargetAreaM2 != 5.0 ? opts.TargetAreaM2 : meanArea; // SATCAT mean unless overridden
+var flux = new SpatialDensityFlux { RelVelMetersPerSec = opts.RelVelMS, TargetAreaM2 = targetArea };
 var shells = flux.Analyze(catalog, cloud, nail);
 double totalPerYear = SpatialDensityFlux.TotalCollisionsPerYear(shells);
 
 var peak = shells.Where(s => s.NailCount > 0).OrderByDescending(s => s.NailImpactsPerSatPerYear).FirstOrDefault();
 Console.WriteLine("--- Collision flux (first-order spatial density) ---");
-Console.WriteLine($"  assumed rel. velocity {opts.RelVelMS / 1000:F1} km/s, representative target area {opts.TargetAreaM2:F1} m²");
+Console.WriteLine($"  assumed rel. velocity {opts.RelVelMS / 1000:F1} km/s, representative target area {targetArea:F2} m² (SATCAT-derived)");
 if (peak is not null)
 {
     Console.WriteLine($"  peak nail shell: {peak.AltLowKm:F0}-{peak.AltHighKm:F0} km, " +
@@ -139,7 +176,7 @@ if (opts.Gpu)
         sw.Stop();
         double gpuMs = sw.Elapsed.TotalMilliseconds;
 
-        double sigma = Math.Pow(Math.Sqrt(opts.TargetAreaM2) + Math.Sqrt(nail.MeanCrossSectionM2), 2);
+        double sigma = Math.Pow(Math.Sqrt(targetArea) + Math.Sqrt(nail.MeanCrossSectionM2), 2);
         const double reM = 6_378_135.0, secYr = 3.15576e7;
         double totalGpu = 0;
         for (int b = 0; b < nBins; b++)
@@ -176,13 +213,13 @@ if (opts.Evolve)
         LaunchRatePerYear = opts.LaunchRatePerYear, LaunchAltKm = opts.LaunchAltKm,
         ResponsiveLaunch = opts.Responsive, LossTolerancePerYear = opts.LossTolerance,
     };
-    baseM.SeedFromCatalog(catalog);
+    baseM.SeedFromCatalog(catalogObjects);
     var barM = new KesslerEvolution(nail)
     {
         LaunchRatePerYear = opts.LaunchRatePerYear, LaunchAltKm = opts.LaunchAltKm,
         ResponsiveLaunch = opts.Responsive, LossTolerancePerYear = opts.LossTolerance,
     };
-    barM.SeedFromCatalog(catalog); barM.InjectBarrel(opts.AltKm, opts.NailCount);
+    barM.SeedFromCatalog(catalogObjects); barM.InjectBarrel(opts.AltKm, opts.NailCount);
     var baseR = baseM.Run(50, 10);
     var barR = barM.Run(50, 10);
 
@@ -239,13 +276,13 @@ if (opts.Cascade)
         LaunchRatePerYear = opts.LaunchRatePerYear, LaunchAltKm = opts.LaunchAltKm,
         ResponsiveLaunch = opts.Responsive, LossTolerancePerYear = opts.LossTolerance,
     };
-    baseC.SeedFromCatalog(catalog);
+    baseC.SeedFromCatalog(catalogObjects);
     var barC = new DiscreteCascade(seed: 1)
     {
         LaunchRatePerYear = opts.LaunchRatePerYear, LaunchAltKm = opts.LaunchAltKm,
         ResponsiveLaunch = opts.Responsive, LossTolerancePerYear = opts.LossTolerance,
     };
-    barC.SeedFromCatalog(catalog);
+    barC.SeedFromCatalog(catalogObjects);
     barC.InjectBarrel(cloud, nail, superParticles: 3000, totalNails: opts.NailCount);
 
     var swk = Stopwatch.StartNew();
@@ -291,7 +328,7 @@ if (opts.Cascade)
 if (opts.Tipping)
 {
     Console.WriteLine($"--- Tipping point: launch-rate sweep into the {opts.LaunchAltKm:F0} km band (50 yr) ---");
-    var cat = catalog; // capture for closures
+    var cat = catalogObjects; // capture for closures
     double alt = opts.LaunchAltKm; int nails = opts.NailCount; double barrelAlt = opts.LaunchAltKm;
 
     // 50-yr net growth factor of the debris environment at a given launch rate.
@@ -342,7 +379,7 @@ if (opts.BarrelThreshold)
     double band = opts.LaunchAltKm;
     int nailsPer = opts.NailCount;
     Console.WriteLine($"--- Barrels-to-threshold: inject K barrels into the {band:F0} km band, no launch traffic (50 yr) ---");
-    var cat2 = catalog;
+    var cat2 = catalogObjects;
 
     // Returns (peak growth factor over the run, end growth factor at 50 yr).
     (double peak, double end) Growth(double barrels)
@@ -381,11 +418,15 @@ if (opts.BarrelThreshold)
 if (opts.Conjunction)
 {
     Console.WriteLine("--- Conjunction per-object cascade (Cube method, real geometry, 50 yr) ---");
-    // tier-3 v1: pure environment + optional barrel (no launch-source term yet)
-    var baseX = new ConjunctionCascade(seed: 1) { SolarActivity = 1.0 };
-    baseX.SeedFromCatalog(catalog);
-    var barX = new ConjunctionCascade(seed: 1) { SolarActivity = 1.0 };
-    barX.SeedFromCatalog(catalog);
+    if (opts.LaunchRatePerYear > 0)
+        Console.WriteLine($"   launch source: {opts.LaunchRatePerYear:N0} intacts/yr into the {opts.LaunchAltKm:F0} km band" +
+                          (opts.Responsive ? $" (RESPONSIVE, quit above {opts.LossTolerance:P0}/yr)" : " (constant)"));
+    var baseX = new ConjunctionCascade(seed: 1)
+    { SolarActivity = 1.0, LaunchRatePerYear = opts.LaunchRatePerYear, LaunchAltKm = opts.LaunchAltKm, ResponsiveLaunch = opts.Responsive, LossTolerancePerYear = opts.LossTolerance };
+    baseX.SeedFromCatalog(catalogObjects);
+    var barX = new ConjunctionCascade(seed: 1)
+    { SolarActivity = 1.0, LaunchRatePerYear = opts.LaunchRatePerYear, LaunchAltKm = opts.LaunchAltKm, ResponsiveLaunch = opts.Responsive, LossTolerancePerYear = opts.LossTolerance };
+    barX.SeedFromCatalog(catalogObjects);
     barX.InjectBarrel(cloud, nail, superParticles: 3000, totalNails: opts.NailCount);
 
     var sw = Stopwatch.StartNew();
@@ -419,7 +460,7 @@ if (opts.Conjunction)
 if (opts.Charts)
 {
     Console.WriteLine("--- Generating chart dataset → data/charts.json ---");
-    var cat3 = catalog;
+    var cat3 = catalogObjects;
     KesslerEvolution BoxBase() { var m = new KesslerEvolution(nail); m.SeedFromCatalog(cat3); return m; }
 
     // A. Timeline, no launch: box baseline, box +barrel, conjunction baseline.
@@ -451,6 +492,35 @@ if (opts.Charts)
     };
     File.WriteAllText(Path.Combine(dataDir, "charts.json"), System.Text.Json.JsonSerializer.Serialize(charts));
     Console.WriteLine($"   wrote {Path.Combine(dataDir, "charts.json")}\n");
+}
+
+// 4i. Cube-method calibration: geometric (cube) vs well-mixed (kinetic) rate.
+if (opts.Calibrate)
+{
+    Console.WriteLine("--- Cube-method calibration (geometric vs well-mixed) ---");
+    double dt = 30 * 86400.0; const double secYr = 3.15576e7;
+    Console.WriteLine("   cube-resolution sweep (a converged method is cube-size-INVARIANT):");
+    Console.WriteLine("   cube km | sub-samples | bg particles | mean v_rel |    cube/yr | kinetic/yr |         k");
+    var ks = new List<double>();
+    foreach (var (cubeKm, subs, bg) in new[] { (20.0, 6, 4000), (10.0, 12, 20000), (5.0, 24, 60000) })
+    {
+        var m = new ConjunctionCascade(seed: 1) { CubeKm = cubeKm, SubSamples = subs };
+        m.SeedFromCatalog(catalogObjects, backgroundSuperParticles: bg);
+        double cs = 0, vs = 0; int reps = 4;
+        for (int r = 0; r < reps; r++) { var (e, v) = m.MeasureCubeRate(dt); cs += e; vs += v; }
+        double cubeColl = cs / reps, meanVrel = vs / reps;
+        double kin = m.MeasureKineticRate(dt, meanVrel);
+        double k = kin > 0 ? cubeColl / kin : double.NaN;
+        ks.Add(k);
+        Console.WriteLine($"   {cubeKm,7:F0} | {subs,11} | {bg,12:N0} | {meanVrel / 1000,7:F2} km/s | {cubeColl * secYr / dt,10:F1} | {kin * secYr / dt,10:F1} | {k,9:F2}");
+    }
+    double spread = ks.Max() / Math.Max(ks.Min(), 1e-9);
+    Console.WriteLine($"   k spans {ks.Min():F2}–{ks.Max():G3} across cube sizes ({spread:G3}× spread).");
+    Console.WriteLine("   ⇒ NOT converged: the absolute rate is cube-size-dependent, so the conjunction model's");
+    Console.WriteLine("     absolute collision rate is NOT quotable as implemented. Cause: high-weight super-");
+    Console.WriteLine("     particles give λ∝1/V_cube huge variance in small cubes. Fix: near-unit-weight (1:1)");
+    Console.WriteLine("     particles — feasible on GPU (~10^6 objects). USE: box model for rates (with the");
+    Console.WriteLine("     well-mixed caveat), conjunction model for GEOMETRY (real cross-shell crossings).\n");
 }
 
 // 5. Population-context and verdict.
@@ -501,6 +571,7 @@ file sealed class CliOptions
     public bool BarrelThreshold;
     public bool Conjunction;
     public bool Charts;
+    public bool Calibrate;
 
     public static CliOptions Parse(string[] args)
     {
@@ -517,6 +588,7 @@ file sealed class CliOptions
             if (a == "--barrel-threshold") { o.BarrelThreshold = true; continue; }
             if (a == "--conjunction") { o.Conjunction = true; continue; }
             if (a == "--charts") { o.Charts = true; continue; }
+            if (a == "--calibrate") { o.Calibrate = true; continue; }
             if (i + 1 >= args.Length) break; // remaining flags need a value
             switch (a)
             {

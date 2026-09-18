@@ -27,6 +27,15 @@ public sealed class ConjunctionCascade
     public bool UsedGpu { get; private set; }
     public bool Coarsened { get; private set; }
 
+    /// <summary>Ongoing launch traffic into a band (the Kessler driver), with optional economic throttling.</summary>
+    public double LaunchRatePerYear { get; set; } = 0.0;
+    public double LaunchAltKm { get; set; } = 900.0;
+    public bool ResponsiveLaunch { get; set; } = false;
+    public double LossTolerancePerYear { get; set; } = 0.02;
+    public double OperationalSatAreaM2 { get; set; } = 5.0;
+    public double LastLaunchThrottle { get; private set; } = 1.0;
+    private double _launchAccrual;
+
     private static readonly double[] LcEdges = { 0.01, 0.0316, 0.1, 0.316, 1.0, 3.16, 10.0 };
     private readonly Random _rng;
 
@@ -66,7 +75,26 @@ public sealed class ConjunctionCascade
             bool big = _rng.NextDouble() < largeIntactFraction;
             Add(el, big ? 2400.0 : 180.0, big ? 18.0 : 1.78, 1.0, nail: false);
         }
+        SeedBackground(backgroundSmallTotal, backgroundSuperParticles, backgroundLargeTotal, nShell, minAltKm, binKm);
+    }
 
+    /// <summary>Seed observed objects with SATCAT-derived masses/areas (per object).</summary>
+    public void SeedFromCatalog(IReadOnlyList<CatalogObject> objects,
+        double backgroundSmallTotal = 1_000_000, int backgroundSuperParticles = 3000, double backgroundLargeTotal = 8_000,
+        int nShell = 36, double minAltKm = 200, double binKm = 50)
+    {
+        foreach (var o in objects)
+        {
+            double alt = o.Elements.SemiMajorAxis - Constants.EarthRadiusKm;
+            if (alt < minAltKm || alt > minAltKm + nShell * binKm) continue;
+            Add(o.Elements, o.MassKg, o.AreaM2, 1.0, nail: false);
+        }
+        SeedBackground(backgroundSmallTotal, backgroundSuperParticles, backgroundLargeTotal, nShell, minAltKm, binKm);
+    }
+
+    private void SeedBackground(double backgroundSmallTotal, int backgroundSuperParticles, double backgroundLargeTotal,
+        int nShell, double minAltKm, double binKm)
+    {
         double lc0 = Math.Sqrt(LcEdges[0] * LcEdges[1]), lc1 = Math.Sqrt(LcEdges[1] * LcEdges[2]);
         var w = new double[nShell]; double wsum = 0;
         for (int s = 0; s < nShell; s++) { w[s] = DebrisEnvironment.SpatialWeight(minAltKm + (s + 0.5) * binKm); wsum += w[s]; }
@@ -204,8 +232,41 @@ public sealed class ConjunctionCascade
         }
 
         DragStep(dtSec);
+        ApplyLaunch(dtSec);
         _simSec += dtSec;
         return catastrophic;
+    }
+
+    private void ApplyLaunch(double dtSec)
+    {
+        if (LaunchRatePerYear <= 0) return;
+        const double secYr = 3.15576e7;
+
+        double throttle = 1.0;
+        if (ResponsiveLaunch)
+        {
+            double lo = LaunchAltKm - 25, hi = LaunchAltKm + 25;
+            double rLo = (Constants.EarthRadiusKm + lo) * 1000, rHi = (Constants.EarthRadiusKm + hi) * 1000;
+            double Vband = 4.0 / 3.0 * Math.PI * (rHi * rHi * rHi - rLo * rLo * rLo);
+            double sqrtSat = Math.Sqrt(OperationalSatAreaM2), loss = 0;
+            for (int i = 0; i < _els.Count; i++)
+            {
+                if (!_alive[i]) continue;
+                double alt = _els[i].SemiMajorAxis - Constants.EarthRadiusKm;
+                if (alt < lo || alt >= hi) continue;
+                double sig = sqrtSat + _sqrtA[i]; sig *= sig;
+                loss += _w[i] * sig;
+            }
+            double lossYr = loss / Vband * 10_000.0 * secYr;
+            throttle = Math.Max(0.0, 1.0 - lossYr / LossTolerancePerYear);
+        }
+        LastLaunchThrottle = throttle;
+
+        _launchAccrual += LaunchRatePerYear * throttle * dtSec / secYr;
+        if (_launchAccrual < 1.0) return;
+        double batch = _launchAccrual; _launchAccrual = 0;
+        Add(Circular(LaunchAltKm, (45 + 45 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 180.0, 1.78, 0.85 * batch, false);
+        Add(Circular(LaunchAltKm, (45 + 45 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 2400.0, 18.0, 0.15 * batch, false);
     }
 
     private void SpawnFragments(Vec3 pos, Vec3 vel, double meff, double availMass)
@@ -283,6 +344,69 @@ public sealed class ConjunctionCascade
             _els.RemoveRange(w, rem); _epoch.RemoveRange(w, rem); _mass.RemoveRange(w, rem); _area.RemoveRange(w, rem);
             _sqrtA.RemoveRange(w, rem); _w.RemoveRange(w, rem); _alive.RemoveRange(w, rem); _isNail.RemoveRange(w, rem);
         }
+    }
+
+    /// <summary>
+    /// Calibration probe: expected collisions in <paramref name="dtSec"/> and the Σλ-weighted mean
+    /// encounter speed, from the cube method on the frozen current population (no removal/spawn).
+    /// </summary>
+    public (double ExpectedCollisions, double MeanVrelMS) MeasureCubeRate(double dtSec)
+    {
+        double L = CubeKm, Lm = L * 1000.0, Vcube = Lm * Lm * Lm, dtSub = dtSec / SubSamples;
+        double sumLam = 0, sumLamV = 0;
+        for (int sub = 0; sub < SubSamples; sub++)
+        {
+            double[] st = PropagateState(_simSec + _rng.NextDouble() * 5400.0);
+            var cubes = new Dictionary<long, List<int>>();
+            for (int i = 0; i < _els.Count; i++)
+            {
+                if (!_alive[i]) continue;
+                long ix = (long)Math.Floor(st[6 * i] / L) + 1024, iy = (long)Math.Floor(st[6 * i + 1] / L) + 1024, iz = (long)Math.Floor(st[6 * i + 2] / L) + 1024;
+                long key = (ix << 42) | (iy << 21) | iz;
+                if (!cubes.TryGetValue(key, out var lst)) { lst = new List<int>(); cubes[key] = lst; }
+                lst.Add(i);
+            }
+            foreach (var lst in cubes.Values)
+            {
+                int m = lst.Count; if (m < 2) continue;
+                for (int p = 0; p < m; p++)
+                    for (int q = p + 1; q < m; q++)
+                    {
+                        int i = lst[p], j = lst[q];
+                        double dvx = st[6 * i + 3] - st[6 * j + 3], dvy = st[6 * i + 4] - st[6 * j + 4], dvz = st[6 * i + 5] - st[6 * j + 5];
+                        double vrel = Math.Sqrt(dvx * dvx + dvy * dvy + dvz * dvz) * 1000.0;
+                        if (vrel <= 0) continue;
+                        double sig = _sqrtA[i] + _sqrtA[j]; sig *= sig;
+                        double lam = _w[i] * _w[j] * sig * vrel * dtSub / Vcube;
+                        sumLam += lam; sumLamV += lam * vrel;
+                    }
+            }
+        }
+        return (sumLam, sumLam > 0 ? sumLamV / sumLam : 0);
+    }
+
+    /// <summary>Well-mixed (kinetic) expected collisions for the frozen population, mean-altitude shells.</summary>
+    public double MeasureKineticRate(double dtSec, double vrelMS, int nShell = 36, double minAlt = 200, double binKm = 50)
+    {
+        const double reM = 6_378_135.0;
+        var sumW = new double[nShell]; var sumWA = new double[nShell]; var sumWsqrtA = new double[nShell]; var V = new double[nShell];
+        for (int s = 0; s < nShell; s++)
+        {
+            double rLo = reM + (minAlt + s * binKm) * 1000, rHi = reM + (minAlt + (s + 1) * binKm) * 1000;
+            V[s] = 4.0 / 3.0 * Math.PI * (rHi * rHi * rHi - rLo * rLo * rLo);
+        }
+        for (int i = 0; i < _els.Count; i++)
+        {
+            if (!_alive[i]) continue;
+            double alt = _els[i].SemiMajorAxis - Constants.EarthRadiusKm;
+            int s = (int)((alt - minAlt) / binKm);
+            if (s < 0 || s >= nShell) continue;
+            sumW[s] += _w[i]; sumWA[s] += _w[i] * _area[i]; sumWsqrtA[s] += _w[i] * _sqrtA[i];
+        }
+        double total = 0;
+        for (int s = 0; s < nShell; s++)
+            if (V[s] > 0) total += vrelMS / V[s] * (sumW[s] * sumWA[s] + sumWsqrtA[s] * sumWsqrtA[s]) * dtSec;
+        return total;
     }
 
     public CascadeResult Run(double horizonYears = 50, double dtDays = 60)

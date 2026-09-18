@@ -68,4 +68,31 @@ public sealed class CelesTrakClient(string cacheDir)
         using var reader = new StreamReader(path);
         return Tle.LoadMany(reader);
     }
+
+    private const string SatcatUrl = "https://celestrak.org/pub/satcat.csv";
+
+    /// <summary>Download the full SATCAT (object type + RCS) with a file cache; NORAD-keyed.</summary>
+    public async Task<Dictionary<int, SatcatRecord>> GetSatcatAsync(TimeSpan? maxCacheAge = null)
+    {
+        maxCacheAge ??= TimeSpan.FromDays(3);
+        Directory.CreateDirectory(cacheDir);
+        string cachePath = Path.Combine(cacheDir, "satcat.csv");
+        bool fresh = File.Exists(cachePath) && DateTime.UtcNow - File.GetLastWriteTimeUtc(cachePath) < maxCacheAge;
+
+        if (!fresh)
+        {
+            try
+            {
+                string text = await Http.GetStringAsync(SatcatUrl);
+                if (text.Contains("NORAD_CAT_ID") && text.Length > 1000)
+                    await File.WriteAllTextAsync(cachePath, text);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                if (!File.Exists(cachePath))
+                    throw new InvalidOperationException("Could not download SATCAT and no cache exists.", ex);
+            }
+        }
+        return Satcat.LoadFromFile(cachePath);
+    }
 }

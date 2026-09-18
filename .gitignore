@@ -8,8 +8,10 @@ obj/
 *.lib
 src/SpaceWars.Native/spacewars_cuda.dll
 
-# CelesTrak TLE cache (re-downloaded on demand)
+# CelesTrak catalog caches (re-downloaded on demand)
 data/*.tle
+data/satcat.csv
+data/spacetrack_satcat.csv
 
 # Generated visualization builds (concatenated from parts + data)
 viz/index.html
