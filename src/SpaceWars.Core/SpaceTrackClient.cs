@@ -33,9 +33,10 @@ public sealed class SpaceTrackClient(string cacheDir)
         string? p = Environment.GetEnvironmentVariable("SPACETRACK_PASS");
         if (!string.IsNullOrEmpty(u) && !string.IsNullOrEmpty(p)) return (u, p);
 
-        foreach (var t in CredTargets)
-            if (WindowsCredential.TryRead(t, out string cu, out string cp) && cp.Length > 0)
-                return (string.IsNullOrEmpty(cu) ? (Environment.GetEnvironmentVariable("SPACETRACK_USER") ?? "") : cu, cp);
+        if (OperatingSystem.IsWindows())
+            foreach (var t in CredTargets)
+                if (WindowsCredential.TryRead(t, out string cu, out string cp) && cp.Length > 0)
+                    return (string.IsNullOrEmpty(cu) ? (Environment.GetEnvironmentVariable("SPACETRACK_USER") ?? "") : cu, cp);
         return null;
     }
 
