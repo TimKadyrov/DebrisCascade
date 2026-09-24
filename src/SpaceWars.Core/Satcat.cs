@@ -53,10 +53,9 @@ public static class Satcat
         double area = rec.RcsM2 ?? DefaultAreaForType(rec.ObjectType);
         if (area <= 0) area = DefaultAreaForType(rec.ObjectType);
 
-        // Invert the NASA area–length law A = 0.556945·Lc^2.0047, then mass from Lc.
-        double lc = Math.Pow(area / 0.556945, 1.0 / 2.0047);
-        double mass = BulkDensity(lc) * (Math.PI / 6.0) * lc * lc * lc;
-        return (mass, area);
+        // Invert the NASA area–length law A = 0.556945·Lc^2.0047, then intact mass from Lc.
+        double lc = BreakupModel.LcFromArea(area);
+        return (BreakupModel.IntactMassFromLc(lc), area);
     }
 
     public static bool IsIntact(string type) => type is "PAY" or "R/B";
@@ -68,8 +67,6 @@ public static class Satcat
         "DEB" => 0.3,    // fragmentation debris
         _ => 1.0,        // unknown / TBA
     };
-
-    private static double BulkDensity(double lc) => lc < 0.08 ? 2698.9 : 92.937 * Math.Pow(lc, -0.74);
 
     /// <summary>Split a CSV line honoring double-quoted fields.</summary>
     private static string[] SplitCsv(string line)

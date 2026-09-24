@@ -41,6 +41,107 @@ public static class BreakupModel
         => SizeCoefficient * Math.Pow(effectiveMassKg, SizeMassExponent)
                            * Math.Pow(lcMeters, SizeLengthExponent);
 
+    // --- Size ↔ area ↔ mass relations ---
+
+    /// <summary>Characteristic-length bin edges [m] shared by the cascade engines.</summary>
+    public static readonly double[] SizeBinEdges = { 0.01, 0.0316, 0.1, 0.316, 1.0, 3.16, 10.0 };
+
+    /// <summary>Solid-aluminium density [kg/m³] — the upper bound for any debris bulk density.</summary>
+    public const double AluminiumDensity = 2698.9;
+
+    /// <summary>Average cross-sectional area [m²] of an object of characteristic length Lc [m].</summary>
+    public static double AreaFromLc(double lcMeters) => 0.556945 * Math.Pow(lcMeters, 2.0047);
+
+    /// <summary>Characteristic length [m] from average cross-section — inverse of <see cref="AreaFromLc"/>.</summary>
+    public static double LcFromArea(double areaM2) => Math.Pow(areaM2 / 0.556945, 1.0 / 2.0047);
+
+    /// <summary>
+    /// Mass [kg] of an <b>intact</b> object of size Lc: bulk density 92.937·Lc^-0.74 kg/m³, capped at
+    /// solid aluminium. The two meet at Lc ≈ 1.05 cm, so the law is continuous (an earlier version
+    /// switched at 8 cm, where the power law is only ~600 kg/m³ — a 4.5× jump).
+    /// </summary>
+    public static double IntactMassFromLc(double lcMeters)
+    {
+        double rho = Math.Min(AluminiumDensity, 92.937 * Math.Pow(lcMeters, -0.74));
+        return rho * (Math.PI / 6.0) * lcMeters * lcMeters * lcMeters;
+    }
+
+    /// <summary>
+    /// Central area-to-mass ratio [m²/kg] of a <b>collision fragment</b> of size Lc, from the SBM A/m
+    /// distributions for spacecraft debris (Johnson et al. 2001): the small-object branch for
+    /// Lc ≤ 8 cm, the bimodal branch for Lc ≥ 11 cm (component log-means weighted by α), and a
+    /// log-linear bridge between. Fragments are flat and light — far lighter than an intact
+    /// object of the same size, so they both hit softer and decay faster.
+    /// </summary>
+    public static double FragmentAreaToMass(double lcMeters)
+    {
+        double lam = Math.Log10(lcMeters);
+        double lo = Math.Log10(0.08), hi = Math.Log10(0.11);
+        double mu;
+        if (lam <= lo) mu = SmallObjectLogAm(lam);
+        else if (lam >= hi) mu = SpacecraftLogAm(lam);
+        else
+        {
+            double t = (lam - lo) / (hi - lo);
+            mu = (1 - t) * SmallObjectLogAm(lo) + t * SpacecraftLogAm(hi);
+        }
+        return Math.Pow(10.0, mu);
+    }
+
+    /// <summary>Mass [kg] of a collision fragment of size Lc: area ÷ the SBM area-to-mass ratio.</summary>
+    public static double FragmentMassFromLc(double lcMeters) => AreaFromLc(lcMeters) / FragmentAreaToMass(lcMeters);
+
+    private static double SmallObjectLogAm(double lam) =>
+        lam <= -1.75 ? -0.3 : lam < -1.25 ? -0.3 - 1.4 * (lam + 1.75) : -1.0;
+
+    private static double SpacecraftLogAm(double lam)
+    {
+        double alpha = lam <= -1.95 ? 0.0 : lam < 0.55 ? 0.3 + 0.4 * (lam + 1.2) : 1.0;
+        double mu1 = lam <= -1.1 ? -0.6 : lam < 0.0 ? -0.6 - 0.318 * (lam + 1.1) : -0.95;
+        double mu2 = lam <= -0.7 ? -1.2 : lam < -0.1 ? -1.2 - 1.333 * (lam + 0.7) : -2.0;
+        return alpha * mu1 + (1 - alpha) * mu2;
+    }
+
+    /// <summary>
+    /// Mass-limited fragment counts for one breakup, per size bin. Walks the bins from the
+    /// smallest up, taking the full power-law count N(lo..hi) while the fragments' mass still fits
+    /// in <paramref name="availMassKg"/>, a partial bin where the mass runs out, and nothing above
+    /// it — mass conservation truncates the top of the distribution, as it does physically. Mass
+    /// carried by sub-centimetre fragments (1 mm up to the first edge) is charged first but not
+    /// returned. An earlier version instead scaled <i>every</i> bin by one factor, so a single
+    /// notional multi-tonne fragment could suppress the small-fragment counts ~10×.
+    /// </summary>
+    /// <param name="edges">Bin edges [m], ascending (<c>binMassKg.Length + 1</c> entries).</param>
+    /// <param name="binMassKg">Mass [kg] each fragment in that bin carries in the caller's bookkeeping.</param>
+    /// <param name="counts">Output: fragments per bin (same length as <paramref name="binMassKg"/>).</param>
+    public static void DistributeFragments(double meffKg, double availMassKg,
+        ReadOnlySpan<double> edges, ReadOnlySpan<double> binMassKg, Span<double> counts)
+    {
+        counts.Clear();
+        if (meffKg <= 0 || availMassKg <= 0) return;
+
+        // Sub-centimetre mass, integrated over log-spaced sub-bins with fragment masses.
+        double used = 0;
+        const int sub = 12; const double lcMin = 0.001;
+        double lnLo = Math.Log(lcMin), lnHi = Math.Log(edges[0]);
+        for (int k = 0; k < sub; k++)
+        {
+            double l1 = Math.Exp(lnLo + (lnHi - lnLo) * k / sub), l2 = Math.Exp(lnLo + (lnHi - lnLo) * (k + 1) / sub);
+            used += (CountLargerThan(meffKg, l1) - CountLargerThan(meffKg, l2)) * FragmentMassFromLc(Math.Sqrt(l1 * l2));
+        }
+        if (used >= availMassKg) return;
+
+        for (int c = 0; c < binMassKg.Length; c++)
+        {
+            double n = CountLargerThan(meffKg, edges[c]) - CountLargerThan(meffKg, edges[c + 1]);
+            if (n <= 0) continue;
+            double m = n * binMassKg[c];
+            if (used + m <= availMassKg) { counts[c] = n; used += m; continue; }
+            counts[c] = (availMassKg - used) / binMassKg[c];
+            return;
+        }
+    }
+
     /// <summary>
     /// Full description of a single fragmentation event: catastrophic flag, effective
     /// mass, and fragment counts at the standard reference sizes.

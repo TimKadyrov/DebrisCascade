@@ -32,9 +32,23 @@ public class EvolutionTests
         for (int i = 1; i < m.SizeClassCount; i++)
             Assert.True(c[i].MassKg > c[i - 1].MassKg, $"class {i} not heavier than {i - 1}");
 
-        // A 3–10 cm object (class 1, ~0.25 kg) shatters a ~180 kg intact (class 4); a 1–3 cm doesn't.
-        Assert.True(Lethality.IsCatastrophic(c[1].MassKg, 10_000, c[4].MassKg));
+        // Debris classes carry breakup-model fragment masses (flat, light): a 3–10 cm fragment
+        // (~17 g) only craters a ~180 kg intact, while a 30 cm–1 m fragment (~2.6 kg) shatters it.
         Assert.False(Lethality.IsCatastrophic(c[0].MassKg, 10_000, c[4].MassKg));
+        Assert.False(Lethality.IsCatastrophic(c[1].MassKg, 10_000, c[4].MassKg));
+        Assert.True(Lethality.IsCatastrophic(c[3].MassKg, 10_000, c[4].MassKg));
+        Assert.InRange(c[1].MassKg, 0.010, 0.030);
+        Assert.InRange(c[4].MassKg, 120, 250);   // intact payload class stays ~180 kg
+    }
+
+    [Fact]
+    public void Run_EndsExactlyOnTheHorizon()
+    {
+        var m = new KesslerEvolution(new NailSpec());
+        m.SeedFromCatalog(SynthCatalog(500, 500, 900));
+        var r = m.Run(horizonYears: 50, dtDays: 10);   // 50 yr is not a whole number of 10-day steps
+        Assert.Equal(51, r.Years.Length);
+        Assert.Equal(50.0, r.Years[^1], 6);
     }
 
     [Fact]

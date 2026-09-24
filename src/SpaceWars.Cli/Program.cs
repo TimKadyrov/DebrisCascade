@@ -340,13 +340,16 @@ if (opts.Tipping)
         var r = m.Run(50, 10);
         return r.TotalObjects[^1] / r.TotalObjects[0];
     }
-    bool Runaway(double rate, bool b) => GrowthFactor(rate, b) > 1.0;
+    // Net 50-yr growth > 1 means launches out-pace drag — a break-even point, not by itself a
+    // self-sustaining cascade (launched intacts alone raise the count).
+    bool NetGrowth(double rate, bool b) => GrowthFactor(rate, b) > 1.0;
 
     double Critical(bool b)
     {
         double lo = 0, hi = 3000;
-        if (!Runaway(hi, b)) return double.NaN;
-        for (int it = 0; it < 18; it++) { double mid = 0.5 * (lo + hi); if (Runaway(mid, b)) hi = mid; else lo = mid; }
+        if (!NetGrowth(hi, b)) return double.NaN;
+        if (NetGrowth(0, b)) return 0;
+        for (int it = 0; it < 18; it++) { double mid = 0.5 * (lo + hi); if (NetGrowth(mid, b)) hi = mid; else lo = mid; }
         return 0.5 * (lo + hi);
     }
 
@@ -354,12 +357,12 @@ if (opts.Tipping)
     foreach (double rate in new[] { 0, 100, 250, 500, 1000, 1500, 2000 })
     {
         double gb = GrowthFactor(rate, false), gk = GrowthFactor(rate, true);
-        string regime = gb > 1 ? "RUNAWAY" : "self-clean";
+        string regime = gb > 1 ? "net growth" : "self-clean";
         Console.WriteLine($"   {rate,9:N0} | {gb,20:F2}× | {gk,19:F2}× | {regime}");
     }
 
     double critBase = Critical(false), critBar = Critical(true);
-    Console.WriteLine($"\n   critical launch rate (runaway threshold):");
+    Console.WriteLine($"\n   break-even launch rate (net 50-yr growth = 1):");
     Console.WriteLine($"     baseline    : {(double.IsNaN(critBase) ? ">3000" : critBase.ToString("F1"))} intacts/yr");
     Console.WriteLine($"     with barrel : {(double.IsNaN(critBar) ? ">3000" : critBar.ToString("F1"))} intacts/yr");
     if (!double.IsNaN(critBase) && !double.IsNaN(critBar))
@@ -411,7 +414,22 @@ if (opts.BarrelThreshold)
     else
         Console.WriteLine($"   ⇒ ~{kcrit:N0} barrels ({kcrit * nailsPer:N0} nails) to keep the band growing at 50 yr — a one-time");
     Console.WriteLine("     nail dump has no resupply, so drag re-cleans it; sustained runaway needs sustained mass.");
-    Console.WriteLine("     (By contrast ~189 satellites/yr of LAUNCH traffic makes the same band supercritical.)\n");
+
+    // Compare with the launch rate that makes the same band grow on net over 50 yr (computed).
+    double GrowthAt(double rate)
+    {
+        var m = new KesslerEvolution(nail) { LaunchRatePerYear = rate, LaunchAltKm = band };
+        m.SeedFromCatalog(cat2);
+        var r = m.Run(50, 10);
+        return r.TotalObjects[^1] / r.TotalObjects[0];
+    }
+    double rlo = 0, rhi = 3000;
+    if (GrowthAt(rhi) > 1.0)
+    {
+        for (int it = 0; it < 18; it++) { double mid = 0.5 * (rlo + rhi); if (GrowthAt(mid) > 1.0) rhi = mid; else rlo = mid; }
+        Console.WriteLine($"     (By contrast ~{0.5 * (rlo + rhi):F0} satellites/yr of LAUNCH traffic makes the same band grow on net.)\n");
+    }
+    else Console.WriteLine();
 }
 
 // 4g. Tier-3 conjunction cascade (Cube method, real orbit-crossing geometry).

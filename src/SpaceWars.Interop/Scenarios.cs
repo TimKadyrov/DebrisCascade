@@ -142,10 +142,16 @@ public static class Scenarios
         var haz = new double[H + 1][];
         haz[0] = m.SatelliteHazardByShell(satAreaM2, i.RelVelMS);
 
-        double dtSec = 10 * Constants.SecondsPerDay, yearSec = 365.25 * Constants.SecondsPerDay;
+        // Step to each year boundary exactly (10-day steps, last one shortened) — stepping
+        // "while t < 1 yr" in fixed 10-day steps ran 370-day years.
+        double dtSec = 10 * Constants.SecondsPerDay, yearSec = 365.25 * Constants.SecondsPerDay, simSec = 0;
         for (int y = 1; y <= H; y++)
         {
-            for (double t = 0; t < yearSec; t += dtSec) m.Step(dtSec);
+            while (simSec < y * yearSec - 1e-3)
+            {
+                double d = Math.Min(dtSec, y * yearSec - simSec);
+                m.Step(d); simSec += d;
+            }
             years[y] = y;
             haz[y] = m.SatelliteHazardByShell(satAreaM2, i.RelVelMS);
         }

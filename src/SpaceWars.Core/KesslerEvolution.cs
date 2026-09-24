@@ -64,11 +64,25 @@ public sealed class KesslerEvolution
     /// a collision at 900 km seeds 700 and 1100 km — the mechanism a cascade climbs and sinks by.
     /// </summary>
     public double FragmentSpreadShells { get; init; } = 4.0;
+
+    /// <summary>
+    /// Smallest projectile (characteristic length [m]) whose <i>non-catastrophic</i> cratering
+    /// impacts produce ejecta fragments. 0 = every projectile (the breakup model applied as
+    /// written); 0.1 = only ≥10 cm projectiles, the LEGEND convention. Cratering by small debris
+    /// multiplies the small population fast, so this is the model's main sensitivity knob.
+    /// </summary>
+    public double CrateringEjectaMinLcM { get; init; } = 0.0;
     private double[]? _spreadKernel;
     private int _spreadSpan;
 
-    private static readonly double[] LcEdges = { 0.01, 0.0316, 0.1, 0.316, 1.0, 3.16, 10.0 };
+    private static readonly double[] LcEdges = BreakupModel.SizeBinEdges;
     public int SizeClassCount => LcEdges.Length - 1;   // 6
+    /// <summary>
+    /// Classes below this index are debris (1 cm – 1 m) and carry breakup-model fragment masses;
+    /// classes from it up are intact payloads / rocket bodies and carry intact bulk-density masses.
+    /// Launch traffic and the large-object belt go into the intact classes.
+    /// </summary>
+    public const int IntactClassStart = 4;
     public int NailClass => SizeClassCount;            // appended class index
     private readonly int _nc;                          // total classes incl. nails
 
@@ -96,7 +110,8 @@ public sealed class KesslerEvolution
         for (int c = 0; c < SizeClassCount; c++)
         {
             double lo = LcEdges[c], hi = LcEdges[c + 1], lc = Math.Sqrt(lo * hi);
-            _cls[c] = new DebrisClass { LcLoM = lo, LcHiM = hi, LcM = lc, MassKg = MassFromLc(lc), AreaM2 = AreaFromLc(lc) };
+            double mass = c < IntactClassStart ? BreakupModel.FragmentMassFromLc(lc) : BreakupModel.IntactMassFromLc(lc);
+            _cls[c] = new DebrisClass { LcLoM = lo, LcHiM = hi, LcM = lc, MassKg = mass, AreaM2 = BreakupModel.AreaFromLc(lc) };
         }
         _cls[NailClass] = new DebrisClass
         {
@@ -105,11 +120,6 @@ public sealed class KesslerEvolution
         };
         _n = new double[_nShell, _nc];
     }
-
-    // --- NASA breakup-model size relations ---
-    private static double DebrisBulkDensity(double lc) => lc < 0.08 ? 2698.9 : 92.937 * Math.Pow(lc, -0.74); // kg/m^3
-    private static double MassFromLc(double lc) => DebrisBulkDensity(lc) * (Math.PI / 6.0) * lc * lc * lc;
-    private static double AreaFromLc(double lc) => 0.556945 * Math.Pow(lc, 2.0047); // avg cross-section [m^2]
 
     public IReadOnlyList<DebrisClass> Classes => _cls;
 
@@ -267,6 +277,7 @@ public sealed class KesslerEvolution
                         dN[s, projClass] -= events;
                     }
 
+                    if (!cat && _cls[projClass].LcM < CrateringEjectaMinLcM) continue;
                     double meff = cat ? (mt + mp) : BreakupModel.EffectiveMass(mt, mp, RelVelMetersPerSec);
                     double availMass = cat ? (mt + mp) : Math.Min(mt, 50.0 * mp);
                     DepositFragments(dN, s, meff, events, availMass);
@@ -318,22 +329,16 @@ public sealed class KesslerEvolution
 
     private void DepositFragments(double[,] dN, int s, double meff, double events, double availMass)
     {
-        // fragment count per event in each size class, from cumulative N(>Lc)
-        double fragMass = 0;
-        Span<double> cnt = stackalloc double[16];
-        for (int c = 0; c < SizeClassCount; c++)
-        {
-            double n = BreakupModel.CountLargerThan(meff, _cls[c].LcLoM)
-                     - BreakupModel.CountLargerThan(meff, _cls[c].LcHiM);
-            if (n < 0) n = 0;
-            cnt[c] = n; fragMass += n * _cls[c].MassKg;
-        }
-        double scale = (fragMass > availMass && fragMass > 0) ? availMass / fragMass : 1.0;
+        // Mass-limited fragment count per event in each size class (small bins filled first).
+        Span<double> mass = stackalloc double[SizeClassCount];
+        Span<double> cnt = stackalloc double[SizeClassCount];
+        for (int c = 0; c < SizeClassCount; c++) mass[c] = _cls[c].MassKg;
+        BreakupModel.DistributeFragments(meff, availMass, LcEdges, mass, cnt);
 
         EnsureSpreadKernel();
         for (int c = 0; c < SizeClassCount; c++)
         {
-            double amount = events * cnt[c] * scale;
+            double amount = events * cnt[c];
             if (amount <= 0) continue;
             // Scatter across neighbouring shells; fragments landing outside the modelled
             // altitude range are lost (reentry below, escape above).
@@ -378,19 +383,19 @@ public sealed class KesslerEvolution
     /// <summary>Run to the horizon, recording yearly snapshots.</summary>
     public EvolutionResult Run(double horizonYears = 50, double dtDays = 10)
     {
-        double dtSec = dtDays * Constants.SecondsPerDay;
-        int steps = (int)Math.Round(horizonYears * 365.25 / dtDays);
         var years = new List<double>(); var tot = new List<double>();
         var catPy = new List<double>(); var nails = new List<double>(); var lf = new List<double>();
 
-        double catAccum = 0, nextYear = 0; double t = 0;
+        double catAccum = 0, nextYear = 0; double t = 0, doneDays = 0, totalDays = horizonYears * 365.25;
         years.Add(0); tot.Add(TotalDebris()); catPy.Add(0); nails.Add(TotalNails()); lf.Add(_lastThrottle);
 
-        for (int i = 0; i < steps; i++)
+        // Last step is shortened so the run ends exactly on the horizon (and records its final year).
+        while (doneDays < totalDays - 1e-9)
         {
-            catAccum += Step(dtSec);
-            t += dtDays / 365.25;
-            if (t >= nextYear + 1)
+            double d = Math.Min(dtDays, totalDays - doneDays);
+            catAccum += Step(d * Constants.SecondsPerDay);
+            doneDays += d; t = doneDays / 365.25;
+            if (t >= nextYear + 1 - 1e-9)
             {
                 nextYear += 1;
                 years.Add(t); tot.Add(TotalDebris()); catPy.Add(catAccum); nails.Add(TotalNails()); lf.Add(_lastThrottle);

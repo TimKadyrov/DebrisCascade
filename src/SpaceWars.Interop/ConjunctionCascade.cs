@@ -39,7 +39,7 @@ public sealed class ConjunctionCascade
     public double LastLaunchThrottle { get; private set; } = 1.0;
     private double _launchAccrual;
 
-    private static readonly double[] LcEdges = { 0.01, 0.0316, 0.1, 0.316, 1.0, 3.16, 10.0 };
+    private static readonly double[] LcEdges = BreakupModel.SizeBinEdges;
     private readonly Random _rng;
 
     private readonly List<OrbitalElements> _els = new();
@@ -49,9 +49,10 @@ public sealed class ConjunctionCascade
 
     public ConjunctionCascade(int seed = 1) => _rng = new Random(seed);
 
-    private static double BulkDensity(double lc) => lc < 0.08 ? 2698.9 : 92.937 * Math.Pow(lc, -0.74);
-    private static double MassFromLc(double lc) => BulkDensity(lc) * (Math.PI / 6.0) * lc * lc * lc;
-    private static double AreaFromLc(double lc) => 0.556945 * Math.Pow(lc, 2.0047);
+    // Debris (background field and breakup fragments) uses breakup-model fragment masses;
+    // intact objects carry their own SATCAT-derived mass/area.
+    private static double MassFromLc(double lc) => BreakupModel.FragmentMassFromLc(lc);
+    private static double AreaFromLc(double lc) => BreakupModel.AreaFromLc(lc);
 
     private void Add(OrbitalElements el, double mass, double area, double weight, bool nail)
     {
@@ -225,18 +226,22 @@ public sealed class ConjunctionCascade
             double mt = Math.Max(_mass[h.I], _mass[h.J]), mp = Math.Min(_mass[h.I], _mass[h.J]);
             int proj = _mass[h.I] <= _mass[h.J] ? h.I : h.J;
             double vrel = Math.Sqrt(h.Vx * h.Vx + h.Vy * h.Vy + h.Vz * h.Vz) * 1000.0; // parent speed as encounter proxy
+            // A particle carrying < 1 real object can only take part in that fraction of a
+            // collision; scale the event (removal and fragments) by it so no mass is created.
+            double frac;
             if (h.Cat)
             {
-                _w[h.I] -= 1; _w[h.J] -= 1;
-                if (_w[h.I] <= 0) _alive[h.I] = false; if (_w[h.J] <= 0) _alive[h.J] = false;
-                catastrophic++;
+                frac = Math.Min(1.0, Math.Min(_w[h.I], _w[h.J]));
+                _w[h.I] -= frac; _w[h.J] -= frac;
+                if (_w[h.I] <= 1e-9) _alive[h.I] = false; if (_w[h.J] <= 1e-9) _alive[h.J] = false;
+                catastrophic += frac;
             }
-            else { _w[proj] -= 1; if (_w[proj] <= 0) _alive[proj] = false; }
+            else { frac = Math.Min(1.0, _w[proj]); _w[proj] -= frac; if (_w[proj] <= 1e-9) _alive[proj] = false; }
 
             double relForBreak = 10_000.0; // representative closing speed for the breakup spectrum
             double meff = h.Cat ? (mt + mp) : BreakupModel.EffectiveMass(mt, mp, relForBreak);
             double availMass = h.Cat ? (mt + mp) : Math.Min(mt, 50.0 * mp);
-            SpawnFragments(new Vec3(h.Px, h.Py, h.Pz), new Vec3(h.Vx, h.Vy, h.Vz), meff, availMass);
+            SpawnFragments(new Vec3(h.Px, h.Py, h.Pz), new Vec3(h.Vx, h.Vy, h.Vz), meff, availMass, frac);
         }
 
         DragStep(dtSec);
@@ -277,22 +282,20 @@ public sealed class ConjunctionCascade
         Add(Circular(LaunchAltKm, (45 + 45 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 2400.0, 18.0, 0.15 * batch, false);
     }
 
-    private void SpawnFragments(Vec3 pos, Vec3 vel, double meff, double availMass)
+    private void SpawnFragments(Vec3 pos, Vec3 vel, double meff, double availMass, double eventFraction)
     {
+        // mass-limited fragment counts per size class (small bins filled first)
         int nc = LcEdges.Length - 1;
-        Span<double> cnt = stackalloc double[8]; Span<double> mcls = stackalloc double[8]; Span<double> acls = stackalloc double[8];
-        double fragMass = 0;
+        Span<double> cnt = stackalloc double[nc]; Span<double> mcls = stackalloc double[nc]; Span<double> acls = stackalloc double[nc];
         for (int c = 0; c < nc; c++)
         {
             double lc = Math.Sqrt(LcEdges[c] * LcEdges[c + 1]);
             mcls[c] = MassFromLc(lc); acls[c] = AreaFromLc(lc);
-            double num = BreakupModel.CountLargerThan(meff, LcEdges[c]) - BreakupModel.CountLargerThan(meff, LcEdges[c + 1]);
-            cnt[c] = num > 0 ? num : 0; fragMass += cnt[c] * mcls[c];
         }
-        double scale = (fragMass > availMass && fragMass > 0) ? availMass / fragMass : 1.0;
+        BreakupModel.DistributeFragments(meff, availMass, LcEdges, mcls, cnt);
         for (int c = 0; c < nc && _w.Count < HardCap; c++)
         {
-            double weight = cnt[c] * scale; if (weight < 1e-6) continue;
+            double weight = cnt[c] * eventFraction; if (weight < 1e-6) continue;
             var dv = new Vec3(FragmentDeltaVKmS * NextGaussian(), FragmentDeltaVKmS * NextGaussian(), FragmentDeltaVKmS * NextGaussian());
             var frag = OrbitalElements.FromStateVector(pos, vel + dv);
             if (frag.Eccentricity >= 1 || frag.SemiMajorAxis <= Constants.EarthRadiusKm) continue;
@@ -419,18 +422,18 @@ public sealed class ConjunctionCascade
 
     public CascadeResult Run(double horizonYears = 50, double dtDays = 60)
     {
-        double dtSec = dtDays * Constants.SecondsPerDay;
-        int steps = (int)Math.Round(horizonYears * 365.25 / dtDays);
         var yr = new List<double> { 0 }; var tot = new List<double> { TotalObjects() };
         var cs = new List<double> { TotalCrossSection() }; var cpy = new List<double> { 0 }; var nl = new List<double> { TotalNails() };
-        double catAccum = 0, t = 0, nextYear = 0;
-        for (int i = 0; i < steps; i++)
+        double catAccum = 0, t = 0, nextYear = 0, doneDays = 0, totalDays = horizonYears * 365.25;
+        // Last step is shortened so the run ends exactly on the horizon (and records its final year).
+        while (doneDays < totalDays - 1e-9)
         {
-            catAccum += Step(dtSec);
+            double d = Math.Min(dtDays, totalDays - doneDays);
+            catAccum += Step(d * Constants.SecondsPerDay);
             Compact();
             if (_els.Count > CoarsenAbove) Coalesce();
-            t += dtDays / 365.25;
-            if (t >= nextYear + 1)
+            doneDays += d; t = doneDays / 365.25;
+            if (t >= nextYear + 1 - 1e-9)
             {
                 nextYear += 1;
                 yr.Add(t); tot.Add(TotalObjects()); cs.Add(TotalCrossSection()); cpy.Add(catAccum); nl.Add(TotalNails());

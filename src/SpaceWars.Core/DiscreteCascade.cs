@@ -63,7 +63,7 @@ public sealed class DiscreteCascade
     private readonly List<bool> _alive = new();
     private readonly List<bool> _isNail = new();
 
-    private static readonly double[] LcEdges = { 0.01, 0.0316, 0.1, 0.316, 1.0, 3.16, 10.0 };
+    private static readonly double[] LcEdges = BreakupModel.SizeBinEdges;
 
     public DiscreteCascade(int shellCount = 36, double minAltKm = 200, double binKm = 50, int seed = 1)
     {
@@ -78,9 +78,10 @@ public sealed class DiscreteCascade
         }
     }
 
-    private static double BulkDensity(double lc) => lc < 0.08 ? 2698.9 : 92.937 * Math.Pow(lc, -0.74);
-    private static double MassFromLc(double lc) => BulkDensity(lc) * (Math.PI / 6.0) * lc * lc * lc;
-    private static double AreaFromLc(double lc) => 0.556945 * Math.Pow(lc, 2.0047);
+    // Debris (background field and breakup fragments) uses breakup-model fragment masses;
+    // intact objects carry their own SATCAT-derived mass/area.
+    private static double MassFromLc(double lc) => BreakupModel.FragmentMassFromLc(lc);
+    private static double AreaFromLc(double lc) => BreakupModel.AreaFromLc(lc);
 
     private void Add(in OrbitalElements el, double mass, double area, double weight, bool nail)
     {
@@ -210,18 +211,30 @@ public sealed class DiscreteCascade
             var lst = idxByShell[s];
             if (lst.Count < 2) continue;
             double V = _volM3[s];
-            double rate = RelVelMetersPerSec / V * (sumW[s] * sumWA[s] + sumWsqrtA[s] * sumWsqrtA[s]);
+            // Pair rate ½ΣΣ w_i w_j (√A_i+√A_j)² = W·ΣwA + (Σw√A)². Sample a pair from the same
+            // split: with probability W·ΣwA/total draw i ∝ w and j ∝ w·A (the A_i+A_j part),
+            // otherwise both ∝ w·√A (the cross term). Drawing both ∝ w·√A alone over-weights
+            // large–large pairs (~36% of events instead of ~2% for the default population).
+            double termArea = sumW[s] * sumWA[s], termCross = sumWsqrtA[s] * sumWsqrtA[s];
+            double rate = RelVelMetersPerSec / V * (termArea + termCross);
             int events = Poisson(rate * dtSec);
             if (events <= 0) continue;
 
-            // cumulative w·√A for weighted partner picks in this shell
-            var cum = new double[lst.Count]; double acc = 0;
-            for (int t = 0; t < lst.Count; t++) { acc += _w[lst[t]] * _sqrtA[lst[t]]; cum[t] = acc; }
+            var cumW = new double[lst.Count]; var cumWA = new double[lst.Count]; var cumWsA = new double[lst.Count];
+            double accW = 0, accWA = 0, accWsA = 0;
+            for (int t = 0; t < lst.Count; t++)
+            {
+                int o = lst[t];
+                accW += _w[o]; accWA += _w[o] * _area[o]; accWsA += _w[o] * _sqrtA[o];
+                cumW[t] = accW; cumWA[t] = accWA; cumWsA[t] = accWsA;
+            }
+            double pArea = termArea / (termArea + termCross);
 
             for (int ev = 0; ev < events && _w.Count < HardCap; ev++)
             {
-                int i = lst[PickWeighted(cum, acc)];
-                int j = lst[PickWeighted(cum, acc)];
+                int i, j;
+                if (_rng.NextDouble() < pArea) { i = lst[PickWeighted(cumW, accW)]; j = lst[PickWeighted(cumWA, accWA)]; }
+                else { i = lst[PickWeighted(cumWsA, accWsA)]; j = lst[PickWeighted(cumWsA, accWsA)]; }
                 if (!_alive[i] || !_alive[j]) continue;
                 // i==j is a valid intra-population collision when the super-particle stands for
                 // ≥2 real objects (matches the self-pair term in the shell rate). This is what
@@ -234,12 +247,25 @@ public sealed class DiscreteCascade
                 int parent = _mass[i] >= _mass[j] ? i : j;
                 bool cat = Lethality.IsCatastrophic(mp, RelVelMetersPerSec, mt);
 
-                if (cat) { _w[i] -= 1; _w[j] -= 1; if (_w[i] <= 0) _alive[i] = false; if (_w[j] <= 0) _alive[j] = false; catastrophic++; }
-                else { _w[proj] -= 1; if (_w[proj] <= 0) _alive[proj] = false; }
+                // A particle carrying < 1 real object can only take part in that fraction of a
+                // collision; scale the event (removal and fragments) by it so no mass is created.
+                double frac;
+                if (cat)
+                {
+                    frac = i == j ? Math.Min(1.0, _w[i] / 2.0) : Math.Min(1.0, Math.Min(_w[i], _w[j]));
+                    _w[i] -= frac; _w[j] -= frac;
+                    if (_w[i] <= 1e-9) _alive[i] = false; if (_w[j] <= 1e-9) _alive[j] = false;
+                    catastrophic += frac;
+                }
+                else
+                {
+                    frac = Math.Min(1.0, _w[proj]);
+                    _w[proj] -= frac; if (_w[proj] <= 1e-9) _alive[proj] = false;
+                }
 
                 double meff = cat ? (mt + mp) : BreakupModel.EffectiveMass(mt, mp, RelVelMetersPerSec);
                 double availMass = cat ? (mt + mp) : Math.Min(mt, 50.0 * mp);
-                SpawnFragments(parent, meff, availMass);
+                SpawnFragments(parent, meff, availMass, frac);
             }
         }
 
@@ -292,7 +318,7 @@ public sealed class DiscreteCascade
         return lo;
     }
 
-    private void SpawnFragments(int parent, double meff, double availMass)
+    private void SpawnFragments(int parent, double meff, double availMass, double eventFraction)
     {
         var pel = new OrbitalElements
         {
@@ -304,22 +330,19 @@ public sealed class DiscreteCascade
         double period = Constants.TwoPi / pel.MeanMotion;
         var (pos, vel) = pel.StateAt(_rng.NextDouble() * period);
 
-        // mass-conserving fragment counts per size class
+        // mass-limited fragment counts per size class (small bins filled first)
         int nc = LcEdges.Length - 1;
-        Span<double> cnt = stackalloc double[8]; Span<double> mcls = stackalloc double[8]; Span<double> acls = stackalloc double[8];
-        double fragMass = 0;
+        Span<double> cnt = stackalloc double[nc]; Span<double> mcls = stackalloc double[nc]; Span<double> acls = stackalloc double[nc];
         for (int c = 0; c < nc; c++)
         {
             double lc = Math.Sqrt(LcEdges[c] * LcEdges[c + 1]);
             mcls[c] = MassFromLc(lc); acls[c] = AreaFromLc(lc);
-            double num = BreakupModel.CountLargerThan(meff, LcEdges[c]) - BreakupModel.CountLargerThan(meff, LcEdges[c + 1]);
-            cnt[c] = num > 0 ? num : 0; fragMass += cnt[c] * mcls[c];
         }
-        double scale = (fragMass > availMass && fragMass > 0) ? availMass / fragMass : 1.0;
+        BreakupModel.DistributeFragments(meff, availMass, LcEdges, mcls, cnt);
 
         for (int c = 0; c < nc && _w.Count < HardCap; c++)
         {
-            double weight = cnt[c] * scale;
+            double weight = cnt[c] * eventFraction;
             if (weight < 1e-6) continue;
             var dv = new Vec3(FragmentDeltaVKmS * NextGaussian(), FragmentDeltaVKmS * NextGaussian(), FragmentDeltaVKmS * NextGaussian());
             var frag = OrbitalElements.FromStateVector(pos, vel + dv);
@@ -401,19 +424,19 @@ public sealed class DiscreteCascade
 
     public CascadeResult Run(double horizonYears = 50, double dtDays = 15)
     {
-        double dtSec = dtDays * Constants.SecondsPerDay;
-        int steps = (int)Math.Round(horizonYears * 365.25 / dtDays);
         var yr = new List<double> { 0 }; var tot = new List<double> { TotalObjects() };
         var cs = new List<double> { TotalCrossSection() }; var cpy = new List<double> { 0 }; var nl = new List<double> { TotalNails() };
 
-        double catAccum = 0, t = 0, nextYear = 0;
-        for (int i = 0; i < steps; i++)
+        double catAccum = 0, t = 0, nextYear = 0, doneDays = 0, totalDays = horizonYears * 365.25;
+        // Last step is shortened so the run ends exactly on the horizon (and records its final year).
+        for (int i = 0; doneDays < totalDays - 1e-9; i++)
         {
-            catAccum += Step(dtSec);
+            double d = Math.Min(dtDays, totalDays - doneDays);
+            catAccum += Step(d * Constants.SecondsPerDay);
             if (i % 8 == 7) Compact();
             if (_w.Count > MaxObjects) Coalesce();
-            t += dtDays / 365.25;
-            if (t >= nextYear + 1)
+            doneDays += d; t = doneDays / 365.25;
+            if (t >= nextYear + 1 - 1e-9)
             {
                 nextYear += 1;
                 yr.Add(t); tot.Add(TotalObjects()); cs.Add(TotalCrossSection()); cpy.Add(catAccum); nl.Add(TotalNails());
