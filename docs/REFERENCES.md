@@ -47,3 +47,7 @@ links (some need a journal subscription).
   [space.com](https://www.space.com/space-exploration/satellites/every-spacex-starlink-satellite-has-to-dodge-a-collision-almost-weekly-and-experts-fear-the-worst)
 - ESA Space Environment Report 2025 — rocket-body disposal rates.
 - Outer Space Treaty (1967). [UNOOSA](https://www.unoosa.org/unoosa/en/ourwork/spacelaw/treaties/introouterspacetreaty.html)
+- UN Committee on the Peaceful Uses of Outer Space (2007). *Space Debris Mitigation Guidelines*,
+  endorsed by the UN General Assembly (resolution 62/217). Guideline 4 asks operators to avoid
+  intentional destruction and other harmful activities.
+  [PDF (UNOOSA)](https://www.unoosa.org/documents/pdf/spacelaw/sd/COPUOS-GuidelinesE.pdf)
