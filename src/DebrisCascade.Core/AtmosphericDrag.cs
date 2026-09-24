@@ -83,21 +83,22 @@ public static class AtmosphericDrag
 
     /// <summary>
     /// Orbital lifetime [days] for a circular orbit, integrating the decay until reentry.
-    /// Returns +∞ if effectively stable on a millennium scale.
+    /// Returns +∞ beyond 10,000 years. (The cap used to be 1,000 years, and callers that clip at 10,000 then drew
+    /// every lifetime between the two as "&gt;10k", a false step in the lifetime-by-altitude curve near 1,400 km.)
     /// </summary>
     public static double LifetimeDays(double startAltKm, double areaToMass, double solarActivity = 1.0)
     {
         double a = Constants.EarthRadiusKm + startAltKm;
         double aReentry = Constants.EarthRadiusKm + ReentryAltitudeKm;
         double tSec = 0.0;
-        const double maxSec = 1000.0 * 365.25 * Constants.SecondsPerDay; // 1000-yr cap
+        const double maxSec = 10_000.0 * 365.25 * Constants.SecondsPerDay; // 10,000-yr cap
 
         while (a > aReentry && tSec < maxSec)
         {
             double rate = -SemiMajorAxisDecayRateKmPerSec(a, areaToMass, solarActivity); // km/s, positive
             if (rate <= 0) return double.PositiveInfinity;
-            // Adaptive step: don't drop more than ~2 km per step.
-            double dt = Math.Min(2.0 / rate, Constants.SecondsPerDay);
+            // Adaptive step: don't drop more than ~2 km per step (at most 30 days, so slow decays stay cheap).
+            double dt = Math.Min(2.0 / rate, 30 * Constants.SecondsPerDay);
             a -= rate * dt;
             tSec += dt;
         }

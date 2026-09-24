@@ -51,7 +51,8 @@ public static class DeckExport
         var todayBySeed = new ConcurrentDictionary<int, double>();
         double Today(int seed) => todayBySeed.GetOrAdd(seed, s => { var c = new ConjunctionCascade(s); c.SeedFromCatalog(cat); return c.TotalTrackable(700, 1100); });
 
-        Ens Cube(Spec s) => cache.GetOrAdd(s, spec =>
+        // Disposal and avoidance mean nothing with working satellites off: one cache key for all such specs.
+        Ens Cube(Spec s) => cache.GetOrAdd(s.Working ? s : s with { Pmd = 0.9, Rb = 0.8, Avoid = 0.9 }, spec =>
         {
             var runs = new CascadeResult[Seeds]; var growth = new double[Seeds]; var quit = new double[Seeds];
             Parallel.For(0, Seeds, new ParallelOptions { MaxDegreeOfParallelism = Math.Min(Seeds, Environment.ProcessorCount) }, k =>
@@ -122,8 +123,10 @@ public static class DeckExport
         double[] rates = { 0, 25, 50, 100, 150, 200, 300, 400, 500, 700, 1000 };
         var tipEns = rates.Select(r => Cube(new Spec(Launches: r))).ToArray();
         var cst = Cube(new Spec(Launches: 500)); var rsp = Cube(new Spec(Launches: 500, Responsive: true));
-        var quits = rsp.QuitYears.Where(double.IsFinite).OrderBy(x => x).ToArray();
-        double quitYear = quits.Length > 0 ? quits[quits.Length / 2] : -1;
+        // Median over every seed: a seed whose operators never quit counts as +infinity, and a median of +infinity
+        // is reported as -1 (never).
+        var quits = rsp.QuitYears.Select(x => double.IsFinite(x) ? x : double.PositiveInfinity).OrderBy(x => x).ToArray();
+        double quitYear = double.IsFinite(quits[quits.Length / 2]) ? quits[quits.Length / 2] : -1;
         int qi = quitYear >= 0 ? Array.FindIndex(rsp.Years, t => t >= quitYear - 1e-9) : -1;
         var explSpecs = new[] { (0.0, 0.25), (4.0, 0.25), (10.0, 0.25), (4.0, 1.0) };
         var explEns = explSpecs.Select(x => Cube(new Spec(Explosions: x.Item1, ExplScale: x.Item2))).ToArray();
@@ -200,7 +203,7 @@ public static class DeckExport
                     years = cst.Years, constant = cst.Total, constantTrackable = cst.Trackable, constantBelt = cst.Belt, constantCatPerYear = cst.CatPerYear,
                     constantGrowthBelt = cst.Mean, constantGrowthBeltMin = cst.Min, constantGrowthBeltMax = cst.Max,
                     responsive = rsp.Total, responsiveTrackable = rsp.Trackable, responsiveBelt = rsp.Belt, throttle = rsp.LaunchFraction,
-                    operatorsQuitYear = quitYear, operatorsQuitYears = rsp.QuitYears,
+                    operatorsQuitYear = quitYear, operatorsQuitYears = rsp.QuitYears.Select(x => double.IsFinite(x) ? x : -1).ToArray(),
                     growthAfterQuitBelt = qi >= 0 ? rsp.Belt[^1] / rsp.Belt[qi] : 1,
                 } : null,
                 barrels = new

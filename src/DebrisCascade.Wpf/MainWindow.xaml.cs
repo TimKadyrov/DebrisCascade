@@ -440,7 +440,7 @@ public partial class MainWindow : Window
         if (i.WorkingSatellites) sb.AppendLine($"Working: {i.DisposalSuccess:P0} deorbited, {i.RocketBodyDisposal:P0} rocket bodies, {i.AvoidanceSuccess:P0} of tracked conjunctions avoided.");
         ch.Refs.Add(new(1, "×1 = no growth", Palette.Mute));
         foreach (int j in new[] { 0, Array.IndexOf(rates, 50.0), Array.IndexOf(rates, 200.0), Array.IndexOf(rates, 500.0), rates.Length - 1 }.Where(j => j >= 0).Distinct())
-            ch.Notes.Add(new(rates[j], never[j], rates[j] == 0 ? $"nothing added {Fmt.Times(never[j])}" : $"{rates[j]:F0}/yr {Fmt.Times(never[j])}", Palette.Red, Dx: 12, Dy: rates[j] == 0 ? -20 : 2));
+            ch.Notes.Add(new(rates[j], never[j], rates[j] == 0 ? $"nothing added {Fmt.Times(never[j])}" : $"{rates[j]:F0}/yr {Fmt.Times(never[j])}", Palette.Red, Dx: 12, Dy: rates[j] == 0 ? 4 : rates[j] == 50 ? -24 : 2));
         return (sb.ToString(), Show(ch));
     });
 

@@ -161,10 +161,15 @@ public class EvolutionTests
     {
         var m = new KesslerEvolution(new NailSpec());
         var objs = Enumerable.Range(0, 20).Select(_ => Obj(800, 800, 1550, 12)).ToList();
+        objs.Add(Obj(900, 900, 2200, 15));   // lands in the 2,410 kg grid class and moves it to 2,200 kg
+        objs.Add(Obj(900, 900, 170, 1.5));   // likewise the 180 kg grid class
         m.SeedFromCatalog(objs, backgroundSmallTotal: 0, backgroundLargeTotal: 0);
         var cls = m.Classes.Where(c => c.IsIntactMass).ToList();
         Assert.Contains(cls, c => Math.Abs(c.MassKg - 1550) < 1e-6 && Math.Abs(c.AreaM2 - 12) < 1e-6);
-        Assert.Contains(cls, c => Math.Abs(c.MassKg - 2410) < 1e-6);   // traffic's rocket-body class unchanged
+        Assert.Contains(cls, c => Math.Abs(c.MassKg - 2200) < 1e-6);
+        // Traffic keeps its own 180 kg and 2,410 kg classes whatever the catalog holds.
+        Assert.Contains(cls, c => Math.Abs(c.MassKg - 2410) < 1e-6);
+        Assert.Contains(cls, c => Math.Abs(c.MassKg - 180) < 1e-6);
     }
 
     [Fact]

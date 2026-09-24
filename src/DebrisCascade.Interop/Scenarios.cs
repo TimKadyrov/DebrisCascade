@@ -157,27 +157,6 @@ public static class Scenarios
         return (b.Run(i.HorizonYears, 10), k.Run(i.HorizonYears, 10));
     }
 
-    public static (CascadeResult Baseline, CascadeResult Barrel) Cascade(IReadOnlyList<CatalogObject> cat, ScenarioInputs i)
-    {
-        var nail = MakeNail(i); var cloud = DeployCloud(i);
-        var b = new DiscreteCascade(seed: 1) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear };
-        b.SeedFromCatalog(cat);
-        var k = new DiscreteCascade(seed: 1) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear };
-        k.SeedFromCatalog(cat); k.InjectBarrel(cloud, nail, 3000, i.NailCount);
-        return (b.Run(i.HorizonYears, 15), k.Run(i.HorizonYears, 15));
-    }
-
-    public static (CascadeResult Baseline, CascadeResult Barrel, bool UsedGpu) Conjunction(IReadOnlyList<CatalogObject> cat, ScenarioInputs i)
-    {
-        var nail = MakeNail(i); var cloud = DeployCloud(i);
-        var b = new ConjunctionCascade(seed: 1) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear, WorkingSatellites = i.WorkingSatellites, DisposalSuccess = i.DisposalSuccess, RocketBodyDisposal = i.RocketBodyDisposal, AvoidanceSuccess = i.AvoidanceSuccess, SatelliteLifetimeYears = i.SatelliteLifetimeYears };
-        b.SeedFromCatalog(cat);
-        var k = new ConjunctionCascade(seed: 1) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear, WorkingSatellites = i.WorkingSatellites, DisposalSuccess = i.DisposalSuccess, RocketBodyDisposal = i.RocketBodyDisposal, AvoidanceSuccess = i.AvoidanceSuccess, SatelliteLifetimeYears = i.SatelliteLifetimeYears };
-        k.SeedFromCatalog(cat); k.InjectBarrel(cloud, nail, 3000, i.NailCount);
-        var br = b.Run(i.HorizonYears, 60); var kr = k.Run(i.HorizonYears, 60);
-        return (br, kr, b.UsedGpu);
-    }
-
     // ---------------------------------------------------------------------------------------------
     // The deck's analyses, driven by the UI inputs. The metric throughout is the deck's: debris ≥10 cm
     // in the 700–1,100 km belt after the horizon, over today's belt objects ≥10 cm (working satellites
@@ -398,9 +377,11 @@ public static class Scenarios
         progress?.Report($"cube engine, {i.Seeds} seeds: {rate:F0}/yr, operators responsive …");
         var r = CubeEnsemble(cat, i, s => CubeModel(cat, i, s, launches: rate, responsive: true)).Runs;
         double[] Mean(CascadeResult[] rs) => Enumerable.Range(0, rs[0].Years.Length).Select(t => rs.Average(x => x.BeltTrackableObjects[t])).ToArray();
-        var quits = r.Select(x => { int q = Array.FindIndex(x.LaunchFraction, f => f <= 1e-6); return q >= 0 ? x.Years[q] : double.NaN; })
-                     .Where(double.IsFinite).OrderBy(x => x).ToArray();
-        return (c[0].Years, Mean(c), Mean(r), quits.Length > 0 ? quits[quits.Length / 2] : double.NaN, rate);
+        // Median over every seed; one whose operators never quit counts as +infinity (NaN = the median seed never quits).
+        var quits = r.Select(x => { int q = Array.FindIndex(x.LaunchFraction, f => f <= 1e-6); return q >= 0 ? x.Years[q] : double.PositiveInfinity; })
+                     .OrderBy(x => x).ToArray();
+        double median = quits[quits.Length / 2];
+        return (c[0].Years, Mean(c), Mean(r), double.IsFinite(median) ? median : double.NaN, rate);
     }
 
     /// <summary>Removal on the cube engine: belt growth vs removals a year, nothing added and with traffic.</summary>

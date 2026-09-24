@@ -162,8 +162,8 @@ public sealed class KesslerEvolution
 
     /// <summary>
     /// Intact objects (satellites, rocket bodies) sit in seven mass classes spaced ×2.37 apart, 32 kg – 5.7 t, instead of
-    /// two (the 179 kg and 2.4 t size bins). The grid includes 180 kg and 2,410 kg exactly, so added traffic keeps
-    /// its masses; catalogued objects land within ×1.54 of their own mass. Fragment yield grows as mass^0.75, so
+    /// two (the 179 kg and 2.4 t size bins); catalogued objects land within ×1.54 of their own mass, and each class then
+    /// takes the mean of its objects. Added traffic has two fixed classes of its own (180 kg, 2,410 kg). Fragment yield grows as mass^0.75, so
     /// the two-class mapping overstated breakups of heavy objects (a 1.55 t rocket body modelled as 2.4 t).
     /// </summary>
     public bool FineIntactMasses { get; init; } = true;
@@ -220,7 +220,7 @@ public sealed class KesslerEvolution
             _volM3[s] = 4.0 / 3.0 * Math.PI * (rHi * rHi * rHi - rLo * rLo * rLo);
         }
 
-        _nc = SizeClassCount + 2 + IntactMassGridKg.Length;
+        _nc = SizeClassCount + 2 + IntactMassGridKg.Length + 2;
         _cls = new DebrisClass[_nc];
         for (int c = 0; c < SizeClassCount; c++)
         {
@@ -246,6 +246,13 @@ public sealed class KesslerEvolution
                 LcLoM = lc, LcHiM = lc, LcM = lc, MassKg = IntactMassGridKg[g], AreaM2 = BreakupModel.AreaFromLc(lc), IsIntactMass = true,
             };
         }
+        // Added traffic keeps its own fixed classes, apart from the grid: seeding gives each grid class the mean of its
+        // catalogued objects, which must not change the mass of what is launched later (the cube engine uses 180 kg / 2.4 t too).
+        foreach (var (c, kg) in new[] { (TrafficSatClass, 180.0), (TrafficRocketBodyClass, 2410.0) })
+        {
+            double lc = LcForIntactMass(kg);
+            _cls[c] = new DebrisClass { LcLoM = lc, LcHiM = lc, LcM = lc, MassKg = kg, AreaM2 = BreakupModel.AreaFromLc(lc), IsIntactMass = true };
+        }
         _n = new double[_nShell, _nc];
         _catByShell = new double[_nShell];
     }
@@ -270,8 +277,11 @@ public sealed class KesslerEvolution
     }
 
     /// <summary>Class for a ~180 kg satellite and a ~2.4 t rocket body (launch traffic, the modelled large belt, dead satellites).</summary>
-    private int SatClass => FineIntactMasses ? GridClassFor(180) : IntactClassStart;
-    private int RocketBodyClass => FineIntactMasses ? GridClassFor(2410) : IntactClassStart + 1;
+    private int SatClass => FineIntactMasses ? TrafficSatClass : IntactClassStart;
+    private int RocketBodyClass => FineIntactMasses ? TrafficRocketBodyClass : IntactClassStart + 1;
+    /// <summary>Fixed 180 kg and 2,410 kg classes after the grid, for traffic and the objects it leaves behind.</summary>
+    private int TrafficSatClass => IntactGridStart + IntactMassGridKg.Length;
+    private int TrafficRocketBodyClass => IntactGridStart + IntactMassGridKg.Length + 1;
 
     /// <summary>Intact classes that can explode or be removed: the two large size bins and the intact-mass grid.</summary>
     private IEnumerable<int> IntactPool()
@@ -339,7 +349,6 @@ public sealed class KesslerEvolution
             double area = sumA[c] / cnt[c], lc = BreakupModel.LcFromArea(area);
             _cls[c].MassKg = sumM[c] / cnt[c]; _cls[c].AreaM2 = area; _cls[c].LcM = _cls[c].LcLoM = _cls[c].LcHiM = lc;
         }
-        foreach (var o in _ecc) if (_cls[o.C].IsIntactMass) UpdateResidence(o);
         SeedBackground(backgroundSmallTotal, backgroundLargeTotal);
     }
 
@@ -666,15 +675,7 @@ public sealed class KesslerEvolution
         if (o.F.Sum() > 0) _ecc.Add(o);
     }
 
-    /// <summary>Fraction of the orbit's time with radius below R (Kepler: r = a(1 − e cos E), M = E − e sin E).</summary>
-    private static double TimeBelow(double R, double a, double e)
-    {
-        double rp = a * (1 - e), ra = a * (1 + e);
-        if (R <= rp) return 0; if (R >= ra) return 1;
-        double E = Math.Acos(Math.Clamp((1 - R / a) / e, -1, 1));
-        return (E - e * Math.Sin(E)) / Math.PI;
-    }
-
+    /// <summary>Fraction of the orbit's time spent in each shell (Kepler, via <see cref="OrbitGeometry.TimeBelow"/>).</summary>
     private void UpdateResidence(Ecc o)
     {
         double e = 1 - o.Rp / o.A, re = Constants.EarthRadiusKm;
@@ -682,7 +683,7 @@ public sealed class KesslerEvolution
         for (int s = 0; s < _nShell; s++)
         {
             double lo = re + _minAlt + s * _binKm, hi = lo + _binKm;
-            f[s] = TimeBelow(hi, o.A, e) - TimeBelow(lo, o.A, e);
+            f[s] = OrbitGeometry.TimeBelow(hi, o.A, e) - OrbitGeometry.TimeBelow(lo, o.A, e);
         }
         o.F = f; o.AF = o.A;
     }
@@ -852,7 +853,8 @@ public sealed class KesslerEvolution
             if (t >= nextYear + 1 - 1e-9)
             {
                 nextYear += 1;
-                years.Add(t); tot.Add(TotalDebris()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); catPy.Add(catAccum); nails.Add(TotalNails()); lf.Add(_lastThrottle); work.Add(TotalWorking());
+                double span = t - years[^1];   // per year, whatever the step length
+                years.Add(t); tot.Add(TotalDebris()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); catPy.Add(catAccum / span); nails.Add(TotalNails()); lf.Add(_lastThrottle); work.Add(TotalWorking());
                 catAccum = 0;
             }
         }

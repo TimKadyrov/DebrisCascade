@@ -186,7 +186,8 @@ internal sealed class Chart
                         foreach (double yy in new[] { pLo, pHi }) c.Children.Add(Seg(mx - 3, yy, mx + 3, yy, Palette.Ink, 1));
                         labelTop = Math.Min(top, pHi);
                     }
-                    Add(c, Text(BarLabel(v), Palette.Ink, fs, true), (a + z) / 2, labelTop - fs - 6, 0.5);
+                    // With markers beside the bars (drawn right of centre), keep the label left of them.
+                    Add(c, Text(BarLabel(v), Palette.Ink, fs, true), Markers.Count > 0 ? a + (z - a) * 0.3 : (a + z) / 2, labelTop - fs - 6, 0.5);
                 }
             }
             foreach (var m in Markers)
@@ -203,8 +204,9 @@ internal sealed class Chart
         foreach (var sp in Spreads)
         {
             var poly = new Polygon { Fill = new SolidColorBrush(Palette.Alpha(sp.Color, 38)) };
-            for (int k = 0; k < sp.X.Length; k++) if (!LogY || sp.Hi[k] > 0) poly.Points.Add(new Point(PX(sp.X[k]), PY(sp.Hi[k])));
-            for (int k = sp.X.Length - 1; k >= 0; k--) if (!LogY || sp.Lo[k] > 0) poly.Points.Add(new Point(PX(sp.X[k]), PY(sp.Lo[k])));
+            // PY clamps to the axis floor on a log axis, so every vertex is kept (dropping one side's skews the shape).
+            for (int k = 0; k < sp.X.Length; k++) poly.Points.Add(new Point(PX(sp.X[k]), PY(sp.Hi[k])));
+            for (int k = sp.X.Length - 1; k >= 0; k--) poly.Points.Add(new Point(PX(sp.X[k]), PY(sp.Lo[k])));
             c.Children.Add(poly);
         }
 

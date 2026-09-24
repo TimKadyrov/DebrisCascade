@@ -46,7 +46,8 @@ public sealed class ConjunctionCascade
 
     private bool FormationNeighbours(int i, int j, double[] st)
     {
-        if (!ExcludeFormationPairs || _tag[i] != "PAY" || _tag[j] != "PAY") return false;
+        // Catalogued payloads, alive or dead: a satellite killed or left in place keeps its constellation slot.
+        if (!ExcludeFormationPairs || _tag[i] is not ("PAY" or "DEAD") || _tag[j] is not ("PAY" or "DEAD")) return false;
         if (Math.Abs(_els[i].SemiMajorAxis - _els[j].SemiMajorAxis) > FormationDeltaAKm) return false;
         var hi = Vec3Cross(st[6 * i], st[6 * i + 1], st[6 * i + 2], st[6 * i + 3], st[6 * i + 4], st[6 * i + 5]);
         var hj = Vec3Cross(st[6 * j], st[6 * j + 1], st[6 * j + 2], st[6 * j + 3], st[6 * j + 4], st[6 * j + 5]);
@@ -600,7 +601,8 @@ public sealed class ConjunctionCascade
             double a = el.SemiMajorAxis - rate * dtSec;
             // Eccentric: the perigee holds and the apogee comes down until the orbit is circular. Circular: the whole
             // orbit comes down. (Clamping a circular orbit at its old perigee would stop its decay for good.)
-            if (e0 < 1e-3 || a <= rp) { if (e0 >= 1e-3) a = rp; el.Eccentricity = 0; }
+            const double circularE = 1.5e-3;   // Circular() starts orbits at e = 0.001
+            if (e0 < circularE || a <= rp) { if (e0 >= circularE) a = rp; el.Eccentricity = 0; }
             else el.Eccentricity = 1 - rp / a;
             if (a <= reentryA) { _alive[i] = false; continue; }
             el.SemiMajorAxis = a; el.MeanMotion = Math.Sqrt(Constants.Mu / (a * a * a)); el.ComputeSecularRates();
@@ -894,7 +896,7 @@ public sealed class ConjunctionCascade
         {
             int i = idx[n];
             x[n] = (float)st[6 * i]; y[n] = (float)st[6 * i + 1]; z[n] = (float)st[6 * i + 2]; w[n] = (float)_w[i];
-            k[n] = _isNail[i] ? (byte)3 : _working[i] ? (byte)4 : _mass[i] >= IntactMinMassKg && _tag[i] is "PAY" or "R/B" or "LAUNCH" or "DEAD" ? (byte)0
+            k[n] = _isNail[i] ? (byte)3 : _working[i] ? (byte)4 : _mass[i] >= IntactMinMassKg && _tag[i] is not ("FRAG" or "DEB" or "BG-SMALL") ? (byte)0
                  : _area[i] >= TrackableAreaM2 ? (byte)1 : (byte)2;
         }
         return new GlobeSnapshot(year, x, y, z, w, k);
@@ -921,7 +923,8 @@ public sealed class ConjunctionCascade
             {
                 nextYear += 1;
                 onYear?.Invoke(Math.Round(t));
-                yr.Add(t); tot.Add(TotalObjects()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); cs.Add(TotalCrossSection()); cpy.Add(catAccum); nl.Add(TotalNails()); wk.Add(TotalWorking()); eff.Add(EffectiveLeoTrackable()); lf.Add(LastLaunchThrottle);
+                double span = t - yr[^1];   // a stretch of 360–420 days (60-day steps), shorter at the horizon
+                yr.Add(t); tot.Add(TotalObjects()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); cs.Add(TotalCrossSection()); cpy.Add(catAccum / span); nl.Add(TotalNails()); wk.Add(TotalWorking()); eff.Add(EffectiveLeoTrackable()); lf.Add(LastLaunchThrottle);
                 catAccum = 0;
             }
         }

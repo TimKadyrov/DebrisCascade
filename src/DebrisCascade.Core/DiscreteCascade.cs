@@ -553,7 +553,8 @@ public sealed class DiscreteCascade
             if (t >= nextYear + 1 - 1e-9)
             {
                 nextYear += 1;
-                yr.Add(t); tot.Add(TotalObjects()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); cs.Add(TotalCrossSection()); cpy.Add(catAccum); nl.Add(TotalNails());
+                double span = t - yr[^1];   // per year, whatever the step length
+                yr.Add(t); tot.Add(TotalObjects()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); cs.Add(TotalCrossSection()); cpy.Add(catAccum / span); nl.Add(TotalNails());
                 catAccum = 0;
             }
         }

@@ -41,7 +41,7 @@ def kfmt(v, _=None):
     return f"{v/1e6:.1f}M" if v >= 1e6 else (f"{v/1e3:.0f}k" if v >= 1e3 else f"{v:.0f}")
 
 
-# --- Slide 13: per-satellite hazard today by altitude + drag persistence -----------------
+# --- Usability slide: per-satellite hazard today by altitude + drag persistence -----------------
 U = D["usability"]
 alt = np.array(U["altKm"]); haz = np.array(U["hazardToday"]) * 100; hazB = np.array(U["hazardTodayWithBarrelAt550"]) * 100
 fl = np.array(U["fragmentLifetimeYears"]); il = np.array(U["intactLifetimeYears"])
@@ -73,7 +73,7 @@ ax2.text(alt[i1], fl[i1] * 1.6, "3–10 cm fragment", color=ORANGE, fontsize=9, 
 tag(f, "box model · today's catalog · drag lifetimes")
 save(f, "deck_altitude.png")
 
-# --- Slide 14: belt growth vs launch rate ------------------------------------------------
+# --- Tipping slide: belt growth vs launch rate ------------------------------------------------
 t = CW["tipping"]; rates = np.array(t["rates"]); gB = np.array(t["growthBelt"])
 f, ax = fig(11.56, 3.89, [0.075, 0.16, 0.90, 0.78])
 ax.fill_between(rates, t["growthBeltMin"], t["growthBeltMax"], color=RED, alpha=0.13, lw=0)
@@ -96,20 +96,23 @@ ax.text(990, 1.06, "×1 = no growth", color=MUTE, fontsize=8.5, ha="right", va="
 tag(f, f"{CUBE} · 50 years · injected at 900 km, never deorbited")
 save(f, "deck_tipping.png")
 
-# --- Slide 15: constant vs responsive launch at 500/yr -----------------------------------
+# --- Operators slide: constant vs responsive launch at 500/yr -----------------------------------
 r5 = CW["responsive500"]; yrs = np.array(r5["years"])
 f, ax = fig(11.0, 3.75, [0.08, 0.15, 0.88, 0.78])
-q = r5["operatorsQuitYear"]
-ax.axvspan(q, 50, color=MUTE, alpha=0.08, lw=0)
+q = r5["operatorsQuitYear"]   # median run's quit year; -1 = the median run never quits
+taper = next((y for y, th in zip(yrs, r5["throttle"]) if th < 0.03), None)   # mean launch rate under 3%
+if q >= 0: ax.axvspan(q, 50, color=MUTE, alpha=0.08, lw=0)
 ax.plot(yrs, r5["constantBelt"], color=RED, lw=2.4, label="500 satellites + rocket bodies/yr injected, never deorbited")
 ax.plot(yrs, r5["responsiveBelt"], color=BLUE, lw=2.4, label="responsive: operators throttle, then quit")
-ax.axvline(q, color=MUTE, lw=1, ls=(0, (4, 3)))
+if q >= 0: ax.axvline(q, color=MUTE, lw=1, ls=(0, (4, 3)))
 ax.set_yscale("log"); ax.set_xlim(0, 50)
 ax.yaxis.set_major_formatter(FuncFormatter(kfmt))
 ax.set_xlabel("years", fontsize=10); ax.set_ylabel("belt objects ≥10 cm", fontsize=9.5); ax.tick_params(labelsize=9)
-ax.text(q + 0.6, ax.get_ylim()[0] * 1.15, f"operators stop launching (yr {q:.0f})", color=MUTE, fontsize=9, va="bottom")
+if q >= 0:
+    ax.text(q + 0.6, ax.get_ylim()[0] * 1.15, f"median run stops launching (yr {q:.0f})" + (f"; launches taper to ~0 by yr {taper:.0f}" if taper else ""),
+            color=MUTE, fontsize=9, va="bottom")
 ax.text(49.5, r5["constantBelt"][-1] * 0.8, f"×{r5['constantGrowthBelt']:.0f}", color=RED, fontsize=11, weight="bold", ha="right", va="top")
-ax.text(49.5, r5["responsiveBelt"][-1] * 0.62, f"still ×{r5['growthAfterQuitBelt']:.1f} after they quit", color=BLUE, fontsize=10, weight="bold", ha="right", va="top")
+if q >= 0: ax.text(49.5, r5["responsiveBelt"][-1] * 0.62, f"still ×{r5['growthAfterQuitBelt']:.1f} from year {q:.0f}", color=BLUE, fontsize=10, weight="bold", ha="right", va="top")
 ax.legend(loc="upper left", fontsize=9, frameon=False)
 tag(f, f"cube engine, mean of {NS} seeds · 500 injected/yr at 900 km")
 save(f, "deck_responsive.png")
@@ -126,7 +129,7 @@ ax.text(49, cb[-1] * 0.7, kfmt(cb[-1]), fontsize=9, color=RED, weight="bold", ha
 tag(f, f"cube engine, {NS} seeds")
 save(f, "deck_extreme.png")
 
-# --- Slide 19: extra risk from a big low-altitude breakup ---------------------------------
+# --- Low-altitude slide: extra risk from a big low-altitude breakup ---------------------------------
 L = D["lowEvent"]; mo = np.array(L["months"]); ex = (np.array(L["hazard"]) - np.array(L["baselineHazard"])) * 100
 f, ax = fig(5.79, 2.36, [0.14, 0.21, 0.83, 0.7])
 ax.fill_between(mo, ex, color=GREEN, alpha=0.2, lw=0); ax.plot(mo, ex, color=GREEN, lw=2.2)
@@ -135,7 +138,7 @@ ax.set_xticks([0, 6, 12, 24, 36]); ax.tick_params(labelsize=8)
 ax.set_xlabel("months after the breakup", fontsize=8.5); ax.set_ylabel("extra risk (%/yr)", fontsize=8)
 rel = ex[0] / (L["baselineHazard"][0] * 100) * 100   # ex is already in %/yr
 ax.text(1, ex[0] * 1.02, f"+{ex[0]:.3f}%/yr (+{rel:.0f}%)", fontsize=8.5, color=GREEN, weight="bold", va="bottom")
-tag(f, "box model · 2.2 t breakup at 480 km")
+tag(f, "box model · 2.2 t breakup at 480 km; risk in the 450–500 km shell")
 save(f, "deck_lowevent.png")
 
 # --- Removal slide: belt growth vs removals/yr ---------------------------------------------
@@ -152,8 +155,8 @@ ax.set_xlim(0, 100); ax.set_ylim(0, max(R["beltGrowthAt50LaunchesMax"]) * 1.12)
 ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"×{v:g}"))
 ax.set_xlabel("large dead objects removed per year (riskiest first)", fontsize=10)
 ax.set_ylabel("belt objects ≥10 cm after 50 yr", fontsize=9.5); ax.tick_params(labelsize=9)
-for x, y, c, lab, dy in [(R["toHoldFlatNoLaunches"], 1, GREEN, f"~{R['toHoldFlatNoLaunches']:.0f}/yr holds it flat", -0.4),
-                         (R["toHoldFlatAt50Launches"], 1, RED, f"~{R['toHoldFlatAt50Launches']:.0f}/yr with 50/yr injected", 0.95)]:
+for x, y, c, lab, dy in [p for p in [(R["toHoldFlatNoLaunches"], 1, GREEN, f"~{R['toHoldFlatNoLaunches']:.0f}/yr holds it flat", -0.4),
+                         (R["toHoldFlatAt50Launches"], 1, RED, f"~{R['toHoldFlatAt50Launches']:.0f}/yr with 50/yr injected", 0.95)] if p[0] >= 0]:   # -1 = never flat
     ax.plot([x], [y], "o", ms=9, mfc="white", mec=c, mew=2, zorder=5)
     ax.annotate(lab, (x, y), xytext=(x + 3, y + dy), fontsize=9.5, color=c, weight="bold",
                 arrowprops=dict(arrowstyle="-", color=c, lw=0.7))
@@ -163,23 +166,26 @@ tag(f, f"{CUBE} · 50 years · removals from year 0")
 save(f, "deck_removal.png")
 
 # --- For comparison: every source on one measure (extra belt objects >=10 cm after 50 yr vs adding nothing) ---
-CP = D["comparison"]; bEnd = CW["baseline"]["beltTrackable"][-1]
-YARD = [("1 barrel of nails (832 kg)", CP["oneBarrel"], AMBER),
+# Barrel and ASAT from the box model (effects far below the cube's seed scatter); traffic from the cube engine,
+# as on the scenario slides: extra = (growth - growth with nothing added) x today's belt.
+CP = D["comparison"]; TG = dict(zip(CW["tipping"]["rates"], CW["tipping"]["growthBelt"])); TODAY = D["working"]["beltToday"]
+cube_extra = lambda r: (TG[r] - TG[0]) * TODAY
+ROWS = [("1 barrel of nails (832 kg)", CP["oneBarrel"], AMBER),
         ("1 ASAT strike on a 1 t satellite", CP["asat"], ORANGE),
-        ("any number of barrels (ceiling)", CP["barrelCeiling"], AMBER),
-        ("50 satellites + rocket bodies a year\ninjected, never deorbited", CP["traffic50"], RED),
-        ("500 satellites + rocket bodies a year\ninjected, never deorbited", CP["traffic500"], RED)]
+        ("1,000 barrels of nails", CP["barrelCeiling"], AMBER),
+        ("50 satellites + rocket bodies a year\ninjected, never deorbited", cube_extra(50), RED),
+        ("500 satellites + rocket bodies a year\ninjected, never deorbited", cube_extra(500), RED)]
 f, ax = fig(11.56, 3.89, [0.30, 0.16, 0.66, 0.80])
-ys = np.arange(len(YARD))[::-1]
-ax.barh(ys, [v for _, v, _ in YARD], color=[c for _, _, c in YARD], height=0.62)
+ys = np.arange(len(ROWS))[::-1]
+ax.barh(ys, [v for _, v, _ in ROWS], color=[c for _, _, c in ROWS], height=0.62)
 ax.set_xscale("log"); ax.set_xlim(5, 5e6)
-ax.set_yticks(ys); ax.set_yticklabels([n for n, _, _ in YARD], fontsize=10)
+ax.set_yticks(ys); ax.set_yticklabels([n for n, _, _ in ROWS], fontsize=10)
 ax.xaxis.set_major_formatter(FuncFormatter(kfmt)); ax.tick_params(axis="x", labelsize=9)
 ax.tick_params(axis="y", length=0); ax.spines["left"].set_visible(False)
 ax.set_xlabel("extra objects ≥10 cm in the 700–1,100 km belt after 50 years, vs adding nothing", fontsize=10)
-for y, (_, v, c) in zip(ys, YARD):
+for y, (_, v, c) in zip(ys, ROWS):
     ax.text(v * 1.25, y, f"+{float(f'{v:.2g}'):,.0f}", va="center", fontsize=10, weight="bold", color=INK)
-tag(f, "box model (deterministic: resolves effects smaller than seed scatter) · 900 km, ASAT 865 km")
+tag(f, f"barrels, ASAT: box model (resolves effects below seed scatter) · traffic: cube engine, {NS} seeds · 900 km, ASAT 865 km")
 save(f, "deck_comparison.png")
 
 # --- Working satellites: disposal + avoidance vs never deorbited (belt debris after 50 yr) ---------
@@ -197,7 +203,7 @@ if "working" in D:
             run = sw[key]["runs"][ri]
             ax.bar(x, g, width=bw * 0.92, color=col, label=lab if gi == 0 else None)
             ax.errorbar(x, g, yerr=[[g - run["growthMin"]], [run["growthMax"] - g]], fmt="none", ecolor=INK, capsize=2.5, lw=0.9)
-            ax.text(x - bw * 0.2, run["growthMax"] * 1.06, f"×{g:.1f}" if g < 10 else f"×{g:.0f}", ha="center", va="bottom", fontsize=9, weight="bold", color=INK)
+            ax.text(x - bw * 0.2, run["growthMax"] * 1.06, f"×{g:.2f}" if g < 2 else f"×{g:.1f}" if g < 10 else f"×{g:.0f}", ha="center", va="bottom", fontsize=9, weight="bold", color=INK)
             ax.plot(x + bw * 0.3, run["boxGrowth"], "D", ms=4.2, color=INK, mfc="white", label="box model (cross-check)" if gi == 0 and k == 0 else None)
     base0 = sw["neverDeorbited"]["runs"][rates.index(0)]["growth"]
     ax.axhline(base0, color=MUTE, lw=1, ls=(0, (4, 3)))
@@ -211,7 +217,7 @@ if "working" in D:
     h, l = ax.get_legend_handles_labels(); o = [i for i, x in enumerate(l) if not x.startswith("box")] + [i for i, x in enumerate(l) if x.startswith("box")]
     ax.legend([h[i] for i in o], [l[i] for i in o], loc="upper left", fontsize=8.5, frameon=False,
               title="deorbited satellites / rocket bodies / conjunctions avoided", title_fontsize=8.5, ncol=1)
-    tag(f, f"{CUBE} · 50 years · vs today's belt objects ≥10 cm; working satellites not counted as debris")
+    tag(f, f"cube engine, {NS} seeds (bar = mean, whisker = seed range) · 50 years · vs today's belt objects ≥10 cm; working satellites not counted as debris")
     save(f, "deck_working.png")
 
 # --- NASA benchmark: the 1 Jan 2006 catalog, no launches, 200 years, vs LEGEND (Liou & Johnson 2006) ---------
@@ -236,8 +242,8 @@ if os.path.exists(BP):
             ax.errorbar(2, np.mean(cv), yerr=[[np.mean(cv) - min(cv)], [max(cv) - np.mean(cv)]], fmt="none", ecolor=INK, capsize=3, lw=1)
         for k, v in enumerate(vals):
             if np.isfinite(v):
-                ax.text(k - (0.2 if k == 2 else 0), max(v, 0) + (0.02 * max(abs(x) for x in vals if np.isfinite(x)) + 0.3), f"{v:.1f}" if k != 0 or title.startswith("cat") else "≈0",
-                        ha="center", va="bottom", fontsize=8, weight="bold", color=INK)
+                ax.text(k - (0.06 if k == 2 else 0), max(v, 0) + (0.02 * max(abs(x) for x in vals if np.isfinite(x)) + 0.3), f"{v:.1f}" if k != 0 or title.startswith("cat") else "≈0",
+                        ha="right" if k == 2 else "center", va="bottom", fontsize=8, weight="bold", color=INK)
         ax.set_xticks(range(3)); ax.set_xticklabels(labels, fontsize=7.5); ax.tick_params(axis="y", labelsize=7.5)
         ax.set_title(title, fontsize=8.5, color=INK); ax.axhline(0, color=MUTE, lw=0.8)
     tag(f, f"2006 catalog · no launches or explosions · ≥10 cm · cube: {len(cubes)} seeds")
