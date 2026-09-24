@@ -39,7 +39,7 @@ frames = [
     dict(name="extreme1", N=4000, seed=1, color="#7fa8d0", s=3.0, alpha=0.55, cmap=None,
          label="Today", sub=f"~{_r['constantBelt'][0]/1e3:.0f}k objects ≥10 cm in the belt"),
     dict(name="extreme2", N=60000, seed=2, color=None, s=1.3, alpha=0.35, cmap="autumn",
-         label="After 50 yr of 500 derelicts/yr", sub=f"~{_g:.0f}× objects ≥10 cm: the belt is a shell"),
+         label="After 50 yr", sub=f"500 satellites + rocket bodies injected a year, never deorbited\n~{_g:.0f}× objects ≥10 cm: the belt is a shell"),
 ]
 
 for k, fr in enumerate(frames, 1):

@@ -88,7 +88,7 @@ export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # or a generic Wind
   RCS_SIZE categories). Payloads and rocket bodies get intact masses (bulk-density law);
   debris and breakup fragments get the NASA breakup model's own area-to-mass ratios.
 - The headline metric is objects ≥10 cm (all LEO and the 700–1,100 km belt).
-- Explosions (non-collision fragmentations of rocket bodies and derelicts) are a source term in all
+- Explosions (non-collision fragmentations of rocket bodies and dead satellites) are a source term in all
   three engines: `ExplosionsPerYear` (default 4/yr at the seeded population, then scaling with the
   intact mass) and the breakup model's explosion law N(>Lc) = 6·S·Lc^-1.6 with `ExplosionScale`
   S = 0.25 (~60 fragments ≥10 cm per event, the average event; S = 1 is a large rocket-stage
