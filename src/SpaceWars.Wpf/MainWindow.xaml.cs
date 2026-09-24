@@ -69,6 +69,7 @@ public partial class MainWindow : Window
             return new ScenarioInputs
             {
                 AltKm = D(AltKm), IncDeg = D(IncDeg), NailCount = (int)D(NailCount),
+                NailLengthMm = D(NailLen), NailDiameterMm = D(NailDia),
                 DispersalSigmaMS = D(SigmaMS), RelVelMS = D(RelVelMS),
                 LaunchRatePerYear = D(LaunchRate), LaunchAltKm = D(LaunchAlt),
                 Responsive = Responsive.IsChecked == true, LossTolerance = D(LossTol),
@@ -82,6 +83,7 @@ public partial class MainWindow : Window
     {
         if (_catalog is null) { ResultsBox.Text = "Catalog still loading…"; return; }
         var inputs = ReadInputs(); if (inputs is null) return;
+        UsabilityControls.Visibility = Visibility.Collapsed; // shown again only by Usability
         SetBusy(true, $"Running {label} …");
         var sw = System.Diagnostics.Stopwatch.StartNew();
         try
@@ -102,14 +104,14 @@ public partial class MainWindow : Window
     {
         var (b, k) = Scenarios.Evolution(cat.Objects, i);
         string t = TrajectoryText(b.Years, b.TotalObjects, k.TotalObjects, b.CatastrophicPerYear, k.CatastrophicPerYear);
-        return (t, () => DrawTrajectory(b.Years, b.TotalObjects, k.TotalObjects, "years", "objects on orbit"));
+        return (t, () => DrawTrajectory(b.Years, b.TotalObjects, k.TotalObjects, "years", "debris objects on orbit"));
     });
 
     private async void RunCascade(object s, RoutedEventArgs e) => await RunAsync("Cascade (discrete)", (cat, i) =>
     {
         var (b, k) = Scenarios.Cascade(cat.Objects, i);
         string t = TrajectoryText(b.Years, b.TotalObjects, k.TotalObjects, b.CatastrophicPerYear, k.CatastrophicPerYear);
-        return (t, () => DrawTrajectory(b.Years, b.TotalObjects, k.TotalObjects, "years", "objects (super-particle weight)"));
+        return (t, () => DrawTrajectory(b.Years, b.TotalObjects, k.TotalObjects, "years", "debris objects on orbit"));
     });
 
     private async void RunConjunction(object s, RoutedEventArgs e) => await RunAsync("Conjunction (cube)", (cat, i) =>
@@ -118,7 +120,7 @@ public partial class MainWindow : Window
         string t = TrajectoryText(b.Years, b.TotalObjects, k.TotalObjects, b.CatastrophicPerYear, k.CatastrophicPerYear)
                  + $"\nengine: {(gpu ? "CUDA sw_propagate_state (GPU)" : "CPU fallback")}"
                  + "\n(geometry is faithful; absolute rate is qualitative — see calibration)";
-        return (t, () => DrawTrajectory(b.Years, b.TotalObjects, k.TotalObjects, "years", "objects (real geometry)"));
+        return (t, () => DrawTrajectory(b.Years, b.TotalObjects, k.TotalObjects, "years", "debris objects on orbit"));
     });
 
     private async void RunTipping(object s, RoutedEventArgs e) => await RunAsync("Tipping sweep", (cat, i) =>
@@ -130,6 +132,65 @@ public partial class MainWindow : Window
         return (sb.ToString(), () => DrawSeries("launches/yr", "50-yr growth ×", true,
             new Series("growth", AmberC, rates, growth), new Series("threshold", GreenC, new[] { rates[0], rates[^1] }, new[] { 1.0, 1.0 })));
     });
+
+    private double[]? _uAlt, _uYears;
+    private double[][]? _uHaz;
+    private double _uThr;
+
+    private async void RunUsability(object s, RoutedEventArgs e) => await RunAsync("Usability by altitude", (cat, i) =>
+    {
+        var (alt, years, haz, thr) = Scenarios.UsabilityOverTime(cat.Objects, i, cat.MeanAreaM2);
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"Per-satellite collision probability vs altitude (target {cat.MeanAreaM2:F1} m²).");
+        sb.AppendLine($"Unusable threshold = {thr:P1}/yr. Drag the Year slider to scrub time.\n");
+        sb.AppendLine($"Unusable at yr 0  : {UnusableBands(alt, haz[0], thr)}");
+        sb.AppendLine($"Unusable at yr {years.Length - 1,-3}: {UnusableBands(alt, haz[^1], thr)}");
+        int pk = Array.IndexOf(haz[^1], haz[^1].Max());
+        sb.AppendLine($"\nWorst band ~{alt[pk]:F0} km: {haz[^1][pk]:P1}/yr at horizon.");
+        return (sb.ToString(), () =>
+        {
+            _uAlt = alt; _uYears = years; _uHaz = haz; _uThr = thr;
+            UsabilityControls.Visibility = Visibility.Visible;
+            YearSlider.Maximum = years.Length - 1;
+            YearSlider.Value = years.Length - 1;
+            DrawUsabilityYear(years.Length - 1);
+            _redraw = () => DrawUsabilityYear((int)YearSlider.Value);
+        });
+    });
+
+    private void DrawUsabilityYear(int y)
+    {
+        if (_uAlt is null || _uHaz is null || _uYears is null) return;
+        y = Math.Clamp(y, 0, _uHaz.Length - 1);
+        YearLabel.Text = ((int)_uYears[y]).ToString();
+        DrawSeries("altitude (km)", "collision prob / sat / yr", true,
+            new Series("year 0", Color.FromArgb(120, 0x4D, 0xA6, 0xFF), _uAlt, _uHaz[0]),
+            new Series($"year {(int)_uYears[y]}", RedC, _uAlt, _uHaz[y]),
+            new Series("unusable", AmberC, new[] { _uAlt[0], _uAlt[^1] }, new[] { _uThr, _uThr }));
+    }
+
+    private void YearSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_uHaz != null) DrawUsabilityYear((int)e.NewValue);
+    }
+
+    private static string UnusableBands(double[] alt, double[] haz, double thr)
+    {
+        var parts = new System.Collections.Generic.List<string>();
+        int start = -1;
+        for (int s = 0; s <= alt.Length; s++)
+        {
+            bool over = s < alt.Length && haz[s] >= thr;
+            if (over && start < 0) start = s;
+            else if (!over && start >= 0)
+            {
+                double lo = alt[start] - 25, hi = alt[s - 1] + 25;
+                parts.Add($"{lo:F0}–{hi:F0} km");
+                start = -1;
+            }
+        }
+        return parts.Count > 0 ? string.Join(", ", parts) : "none";
+    }
 
     private static string TrajectoryText(double[] yr, double[] baseline, double[] barrel, double[] baseCat, double[] barCat)
     {

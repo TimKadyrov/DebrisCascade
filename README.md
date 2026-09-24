@@ -11,6 +11,8 @@ unusable. LEO's debris belt (~800–1000 km) is *already near-critical*; whether
 is governed by **launch and removal policy**, against which a barrel of nails is a rounding
 error (~hundreds of barrels / thousands of tonnes would be needed even to nudge a band).
 
+See **[SUMMARY.md](SUMMARY.md)** for a plain-language write-up, including the altitude analysis.
+
 ## Pipeline
 
 ```

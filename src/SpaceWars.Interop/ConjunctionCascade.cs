@@ -23,7 +23,10 @@ public sealed class ConjunctionCascade
     public int SubSamples { get; init; } = 4;         // phase samples per step (Cube averaging)
     public double FragmentDeltaVKmS { get; init; } = 0.1;
     public double SolarActivity { get; init; } = 1.0;
-    public int CoarsenAbove { get; init; } = 200_000;
+    public int CoarsenAbove { get; init; } = 120_000;
+    private const int HardCap = 800_000;          // absolute object cap (memory backstop)
+    private const int MaxHitsPerStep = 200_000;   // bound the per-step collision list
+    private const int MaxEventsPerPair = 16;       // bound events from one heavy super-particle pair
     public bool UsedGpu { get; private set; }
     public bool Coarsened { get; private set; }
 
@@ -190,8 +193,9 @@ public sealed class ConjunctionCascade
 
             foreach (var lst in cubes.Values)
             {
+                if (hits.Count >= MaxHitsPerStep) break;
                 int m = lst.Count; if (m < 2) continue;
-                for (int p = 0; p < m; p++)
+                for (int p = 0; p < m && hits.Count < MaxHitsPerStep; p++)
                     for (int q = p + 1; q < m; q++)
                     {
                         int i = lst[p], j = lst[q];
@@ -200,7 +204,7 @@ public sealed class ConjunctionCascade
                         if (vrel <= 0) continue;
                         double sigma = (_sqrtA[i] + _sqrtA[j]); sigma *= sigma; // m^2
                         double lam = _w[i] * _w[j] * sigma * vrel * dtSub / Vcube;
-                        int ev = Poisson(lam);
+                        int ev = Math.Min(Poisson(lam), MaxEventsPerPair);
                         for (int e = 0; e < ev; e++)
                         {
                             double mt = Math.Max(_mass[i], _mass[j]), mp = Math.Min(_mass[i], _mass[j]);
@@ -208,6 +212,7 @@ public sealed class ConjunctionCascade
                             int par = _mass[i] >= _mass[j] ? i : j;
                             hits.Add(new Hit(i, j, cat, st[6 * par], st[6 * par + 1], st[6 * par + 2], st[6 * par + 3], st[6 * par + 4], st[6 * par + 5]));
                         }
+                        if (hits.Count >= MaxHitsPerStep) break;
                     }
             }
         }
@@ -215,6 +220,7 @@ public sealed class ConjunctionCascade
         double catastrophic = 0;
         foreach (var h in hits)
         {
+            if (_els.Count >= HardCap) break; // memory backstop; Run() coalesces after the step
             if (!_alive[h.I] || !_alive[h.J]) continue;
             double mt = Math.Max(_mass[h.I], _mass[h.J]), mp = Math.Min(_mass[h.I], _mass[h.J]);
             int proj = _mass[h.I] <= _mass[h.J] ? h.I : h.J;
@@ -284,7 +290,7 @@ public sealed class ConjunctionCascade
             cnt[c] = num > 0 ? num : 0; fragMass += cnt[c] * mcls[c];
         }
         double scale = (fragMass > availMass && fragMass > 0) ? availMass / fragMass : 1.0;
-        for (int c = 0; c < nc; c++)
+        for (int c = 0; c < nc && _w.Count < HardCap; c++)
         {
             double weight = cnt[c] * scale; if (weight < 1e-6) continue;
             var dv = new Vec3(FragmentDeltaVKmS * NextGaussian(), FragmentDeltaVKmS * NextGaussian(), FragmentDeltaVKmS * NextGaussian());

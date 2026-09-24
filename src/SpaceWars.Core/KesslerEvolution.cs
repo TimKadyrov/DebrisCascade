@@ -200,6 +200,33 @@ public sealed class KesslerEvolution
         double t = 0; for (int s = 0; s < _nShell; s++) t += _n[s, NailClass]; return t;
     }
 
+    /// <summary>Shell mid-altitudes [km].</summary>
+    public double[] MidAltitudesKm => (double[])_midAlt.Clone();
+
+    /// <summary>
+    /// Annual expected impacts on one operational satellite (area <paramref name="satAreaM2"/>)
+    /// at each shell — i.e. its per-year collision/mission-kill probability. Above the operator
+    /// loss tolerance the orbit is effectively unusable.
+    /// </summary>
+    public double[] SatelliteHazardByShell(double satAreaM2, double relVelMetersPerSec)
+    {
+        const double secYr = 3.15576e7;
+        double sqrtSat = Math.Sqrt(satAreaM2);
+        var haz = new double[_nShell];
+        for (int s = 0; s < _nShell; s++)
+        {
+            double V = _volM3[s]; if (V <= 0) continue;
+            double sum = 0;
+            for (int c = 0; c < _nc; c++)
+            {
+                double sigma = Math.Pow(sqrtSat + Math.Sqrt(_cls[c].AreaM2), 2.0);
+                sum += _n[s, c] / V * sigma;
+            }
+            haz[s] = sum * relVelMetersPerSec * secYr;
+        }
+        return haz;
+    }
+
     /// <summary>Advance by dt seconds. Returns the number of catastrophic collisions in the step.</summary>
     public double Step(double dtSec)
     {

@@ -12,6 +12,8 @@ public sealed class ScenarioInputs
     public double AltKm { get; set; } = 550;
     public double IncDeg { get; set; } = 53;
     public int NailCount { get; set; } = 200_000;
+    public double NailLengthMm { get; set; } = 75;
+    public double NailDiameterMm { get; set; } = 3;
     public double DispersalSigmaMS { get; set; } = 50;
     public double RelVelMS { get; set; } = 10_000;
     public double LaunchRatePerYear { get; set; } = 0;
@@ -36,7 +38,8 @@ public sealed class CatalogBundle
 /// <summary>Orchestrates the model runs from a set of inputs — the reusable analysis layer.</summary>
 public static class Scenarios
 {
-    private static readonly NailSpec Nail = new();
+    private static NailSpec MakeNail(ScenarioInputs i) =>
+        new() { LengthM = i.NailLengthMm / 1000.0, DiameterM = i.NailDiameterMm / 1000.0 };
 
     public static async Task<CatalogBundle> LoadCatalogAsync(string dataDir, string group = "active")
     {
@@ -73,35 +76,36 @@ public static class Scenarios
         double a = Constants.EarthRadiusKm + i.AltKm;
         double rev = Math.Sqrt(Constants.Mu / (a * a * a)) * Constants.SecondsPerDay / Constants.TwoPi;
         var parent = OrbitalElements.FromMeanMotionRevPerDay(rev, 0, i.IncDeg * Constants.DegToRad, 0, 0, 0);
-        return new NailBarrel { Nail = Nail, Count = i.NailCount }.Deploy(parent, 0, i.DispersalSigmaMS);
+        return new NailBarrel { Nail = MakeNail(i), Count = i.NailCount }.Deploy(parent, 0, i.DispersalSigmaMS);
     }
 
     public static (EvolutionResult Baseline, EvolutionResult Barrel) Evolution(IReadOnlyList<CatalogObject> cat, ScenarioInputs i)
     {
-        var b = new KesslerEvolution(Nail) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance };
+        var nail = MakeNail(i);
+        var b = new KesslerEvolution(nail) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance };
         b.SeedFromCatalog(cat);
-        var k = new KesslerEvolution(Nail) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance };
+        var k = new KesslerEvolution(nail) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance };
         k.SeedFromCatalog(cat); k.InjectBarrel(i.AltKm, i.NailCount);
         return (b.Run(i.HorizonYears, 10), k.Run(i.HorizonYears, 10));
     }
 
     public static (CascadeResult Baseline, CascadeResult Barrel) Cascade(IReadOnlyList<CatalogObject> cat, ScenarioInputs i)
     {
-        var cloud = DeployCloud(i);
+        var nail = MakeNail(i); var cloud = DeployCloud(i);
         var b = new DiscreteCascade(seed: 1) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance };
         b.SeedFromCatalog(cat);
         var k = new DiscreteCascade(seed: 1) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance };
-        k.SeedFromCatalog(cat); k.InjectBarrel(cloud, Nail, 3000, i.NailCount);
+        k.SeedFromCatalog(cat); k.InjectBarrel(cloud, nail, 3000, i.NailCount);
         return (b.Run(i.HorizonYears, 15), k.Run(i.HorizonYears, 15));
     }
 
     public static (CascadeResult Baseline, CascadeResult Barrel, bool UsedGpu) Conjunction(IReadOnlyList<CatalogObject> cat, ScenarioInputs i)
     {
-        var cloud = DeployCloud(i);
+        var nail = MakeNail(i); var cloud = DeployCloud(i);
         var b = new ConjunctionCascade(seed: 1) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance };
         b.SeedFromCatalog(cat);
         var k = new ConjunctionCascade(seed: 1) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance };
-        k.SeedFromCatalog(cat); k.InjectBarrel(cloud, Nail, 3000, i.NailCount);
+        k.SeedFromCatalog(cat); k.InjectBarrel(cloud, nail, 3000, i.NailCount);
         var br = b.Run(i.HorizonYears, 60); var kr = k.Run(i.HorizonYears, 60);
         return (br, kr, b.UsedGpu);
     }
@@ -109,9 +113,10 @@ public static class Scenarios
     public static (double[] Rates, double[] Growth) Tipping(IReadOnlyList<CatalogObject> cat, ScenarioInputs i)
     {
         double[] rates = { 0, 50, 100, 150, 200, 300, 400, 600, 800, 1200, 1600, 2000 };
+        var nail = MakeNail(i);
         var g = rates.Select(r =>
         {
-            var m = new KesslerEvolution(Nail) { SolarActivity = i.SolarActivity, LaunchRatePerYear = r, LaunchAltKm = i.LaunchAltKm };
+            var m = new KesslerEvolution(nail) { SolarActivity = i.SolarActivity, LaunchRatePerYear = r, LaunchAltKm = i.LaunchAltKm };
             m.SeedFromCatalog(cat);
             var rr = m.Run(i.HorizonYears, 10);
             return rr.TotalObjects[^1] / rr.TotalObjects[0];
@@ -119,25 +124,54 @@ public static class Scenarios
         return (rates, g);
     }
 
+    /// <summary>
+    /// Per-satellite annual collision probability vs altitude, now and after the horizon.
+    /// Above the loss tolerance the orbit is effectively unusable.
+    /// </summary>
+    public static (double[] AltKm, double[] Years, double[][] HazardByYear, double Threshold) UsabilityOverTime(
+        IReadOnlyList<CatalogObject> cat, ScenarioInputs i, double satAreaM2)
+    {
+        var nail = MakeNail(i);
+        var m = new KesslerEvolution(nail) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance };
+        m.SeedFromCatalog(cat);
+        m.InjectBarrel(i.AltKm, i.NailCount);
+
+        var alt = m.MidAltitudesKm;
+        int H = Math.Max(1, (int)Math.Round(i.HorizonYears));
+        var years = new double[H + 1];
+        var haz = new double[H + 1][];
+        haz[0] = m.SatelliteHazardByShell(satAreaM2, i.RelVelMS);
+
+        double dtSec = 10 * Constants.SecondsPerDay, yearSec = 365.25 * Constants.SecondsPerDay;
+        for (int y = 1; y <= H; y++)
+        {
+            for (double t = 0; t < yearSec; t += dtSec) m.Step(dtSec);
+            years[y] = y;
+            haz[y] = m.SatelliteHazardByShell(satAreaM2, i.RelVelMS);
+        }
+        return (alt, years, haz, i.LossTolerance);
+    }
+
     /// <summary>Single-nail lethality + spatial-density flux summary as text.</summary>
     public static string LethalityAndFlux(IReadOnlyList<CatalogObject> cat, ScenarioInputs i, double targetAreaM2)
     {
+        var nail = MakeNail(i);
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"Nail: {Nail.MassKg * 1000:F2} g, σ={Nail.MeanCrossSectionM2 * 1e4:F2} cm², Lc={Nail.CharacteristicLengthM * 100:F1} cm, A/m={Nail.AreaToMassRatio:F3} m²/kg");
-        sb.AppendLine($"Barrel: {i.NailCount:N0} nails = {i.NailCount * Nail.MassKg:N0} kg at {i.AltKm:F0} km / {i.IncDeg:F0}°");
+        sb.AppendLine($"Nail: {i.NailLengthMm:F0}×{i.NailDiameterMm:F1} mm → {nail.MassKg * 1000:F2} g, σ={nail.MeanCrossSectionM2 * 1e4:F2} cm², Lc={nail.CharacteristicLengthM * 100:F1} cm, A/m={nail.AreaToMassRatio:F3} m²/kg");
+        sb.AppendLine($"Barrel: {i.NailCount:N0} nails = {i.NailCount * nail.MassKg:N0} kg at {i.AltKm:F0} km / {i.IncDeg:F0}°");
         foreach (var solar in new[] { ("solar min", 0.5), ("nominal", 1.0), ("solar max", 4.0) })
         {
-            double d = AtmosphericDrag.LifetimeDays(i.AltKm, Nail.AreaToMassRatio, solar.Item2);
+            double d = AtmosphericDrag.LifetimeDays(i.AltKm, nail.AreaToMassRatio, solar.Item2);
             sb.AppendLine($"  lifetime ({solar.Item1}): {(double.IsInfinity(d) ? ">1000 yr" : $"{d / 365.25:F1} yr")}");
         }
         sb.AppendLine();
         foreach (double v in new[] { 7_600.0, 10_000.0, 15_200.0 })
-            sb.AppendLine($"  @ {v / 1000,5:F1} km/s: shatters targets ≤ {Lethality.MaxCatastrophicTargetMassKg(Nail.MassKg, v):F1} kg");
+            sb.AppendLine($"  @ {v / 1000,5:F1} km/s: shatters targets ≤ {Lethality.MaxCatastrophicTargetMassKg(nail.MassKg, v):F1} kg");
         sb.AppendLine();
 
         var cloud = DeployCloud(i);
         var flux = new SpatialDensityFlux { RelVelMetersPerSec = i.RelVelMS, TargetAreaM2 = targetAreaM2 };
-        var shells = flux.Analyze(cat.Select(o => o.Elements).ToList(), cloud, Nail);
+        var shells = flux.Analyze(cat.Select(o => o.Elements).ToList(), cloud, nail);
         double total = SpatialDensityFlux.TotalCollisionsPerYear(shells);
         sb.AppendLine($"Expected nail mission-kills across LEO: {total:F1} / year (target area {targetAreaM2:F2} m²)");
         var peak = shells.Where(s => s.NailCount > 0).OrderByDescending(s => s.NailImpactsPerSatPerYear).FirstOrDefault();

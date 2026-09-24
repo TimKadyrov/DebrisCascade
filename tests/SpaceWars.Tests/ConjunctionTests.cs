@@ -62,6 +62,22 @@ public class ConjunctionTests
     }
 
     [Fact]
+    public void HugeObjects_HighAltitude_StayBounded()
+    {
+        // Reproduces the OOM case: 750x750 mm "nails" (~2.6 t each) at 1300 km (no drag).
+        var c = new ConjunctionCascade(seed: 9);
+        c.SeedFromCatalog(Synth(2000, 1200, 1400));
+        var nail = new NailSpec { LengthM = 0.75, DiameterM = 0.75 };
+        double a = Constants.EarthRadiusKm + 1300;
+        double rev = Math.Sqrt(Constants.Mu / (a * a * a)) * Constants.SecondsPerDay / Constants.TwoPi;
+        var parent = OrbitalElements.FromMeanMotionRevPerDay(rev, 0, 60 * Constants.DegToRad, 0, 0, 0);
+        var cloud = new NailBarrel { Nail = nail, Count = 20000 }.Deploy(parent, 0, 60, seed: 3);
+        c.InjectBarrel(cloud, nail, 3000, 200_000);
+        var r = c.Run(horizonYears: 3, dtDays: 90);   // enough steps to trigger any blow-up
+        Assert.All(r.TotalObjects, v => Assert.True(double.IsFinite(v) && v >= 0));
+    }
+
+    [Fact]
     public void EccentricObjects_CollideAcrossShells()
     {
         // Highly eccentric objects crossing many shells must still register collisions
