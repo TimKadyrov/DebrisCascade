@@ -216,6 +216,62 @@ public static class DeckExport
         }
         var crossChecks = new[] { CrossCheck(50, 0), CrossCheck(0, 10) };
 
+        // --- working satellites: end-of-life disposal and collision avoidance (vs never deorbited) ---
+        // Growth is belt debris ≥10 cm after 50 yr over today's belt objects ≥10 cm (working satellites
+        // aren't debris, so a working run's own start count is lower; today's count is the common yardstick).
+        log("  working satellites: disposal + avoidance (box sweep; cube baseline, 8 seeds) ...");
+        var settings = new (string Name, bool On, double Pmd, double Rb, double Avoid)[]
+        {
+            ("neverDeorbited", false, 0, 0, 0), ("poor", true, 0.70, 0.50, 0.50),
+            ("baseline", true, 0.90, 0.80, 0.90), ("best", true, 0.99, 0.95, 0.99),
+        };
+        double beltToday; { var t0 = new KesslerEvolution(nail); t0.SeedFromCatalog(cat); beltToday = t0.TotalTrackable(700, 1100); }
+        object WorkingRun(double rate, bool on, double pmd, double rb, double avoid)
+        {
+            var m = new KesslerEvolution(nail)
+            {
+                LaunchRatePerYear = rate, LaunchAltKm = BeltAltKm, WorkingSatellites = on,
+                DisposalSuccess = pmd, RocketBodyDisposal = rb, AvoidanceSuccess = avoid,
+            };
+            m.SeedFromCatalog(cat);
+            var r = m.Run(Horizon, Dt);
+            return new
+            {
+                beltEnd = r.BeltTrackableObjects[^1], growth = r.BeltTrackableObjects[^1] / beltToday,
+                catastrophicYear50 = r.CatastrophicPerYear[^1], workingEnd = r.WorkingSatellites.Length > 0 ? r.WorkingSatellites[^1] : 0,
+                disposed = m.DisposedTotal, failedDisposal = m.FailedDisposalTotal, missionKills = m.MissionKillsTotal, avoided = m.AvoidedTotal,
+            };
+        }
+        var workingRates = new[] { 0.0, 50, 500 };
+        var workingSweep = settings.Select(st => new
+        {
+            setting = st.Name, disposalSuccess = st.Pmd, rocketBodyDisposal = st.Rb, avoidanceSuccess = st.Avoid,
+            runs = workingRates.Select(r => WorkingRun(r, st.On, st.Pmd, st.Rb, st.Avoid)).ToArray(),
+        }).ToArray();
+        var levers500 = new
+        {
+            disposalOnly = WorkingRun(500, true, 0.90, 0.80, 0.0),    // baseline disposal, no avoidance
+            avoidanceOnly = WorkingRun(500, true, 0.0, 0.0, 0.90),    // baseline avoidance, nothing deorbited
+        };
+        object CubeWorking(double rate)
+        {
+            var g = new List<double>();
+            for (int s = 1; s <= 8; s++)
+            {
+                var t0 = new ConjunctionCascade(seed: s); t0.SeedFromCatalog(cat); double today = t0.TotalTrackable(700, 1100);
+                var c = new ConjunctionCascade(seed: s) { LaunchRatePerYear = rate, LaunchAltKm = BeltAltKm, WorkingSatellites = true };
+                c.SeedFromCatalog(cat); var cr = c.Run(Horizon, 60);
+                g.Add(cr.BeltTrackableObjects[^1] / today);
+            }
+            return new { launchesPerYear = rate, conjunction = g };
+        }
+        var working = new
+        {
+            beltToday, activeSatellitesLeo = bundle.ActiveCount, launchAltKm = BeltAltKm, rates = workingRates,
+            lifetimeYears = new KesslerEvolution(nail).SatelliteLifetimeYears, manoeuvrableFraction = new KesslerEvolution(nail).ManoeuvrableFraction,
+            sweep = workingSweep, levers500, cubeBaseline = new[] { CubeWorking(50), CubeWorking(500) },
+        };
+
         // --- per-satellite hazard by altitude (0 launches), and drag persistence ---
         log("  hazard by altitude & persistence ...");
         var hz = Box(0);
@@ -265,7 +321,7 @@ public static class DeckExport
         {
             generatedUtc = DateTime.UtcNow, horizonYears = Horizon, beltAltKm = BeltAltKm, nailsPerBarrel,
             explosionsPerYear = new KesslerEvolution(nail).ExplosionsPerYear, explosionScale = new KesslerEvolution(nail).ExplosionScale, explosionSensitivity = explosions,
-            removal, crossChecks,
+            removal, crossChecks, working,
             catalog, physics, conventions = perConv, usability, lowEvent,
             ensembles = new { discreteAll = dis, conjunctionAll = con, discreteTrackable = disT, conjunctionTrackable = conT, discreteBelt = disB, conjunctionBelt = conB },
         };

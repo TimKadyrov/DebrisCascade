@@ -8,8 +8,10 @@ namespace SpaceWars.Core;
 /// <summary>One CelesTrak SATCAT record: object type and radar cross-section (m², may be missing).</summary>
 public readonly record struct SatcatRecord(int NoradId, string ObjectType, double? RcsM2);
 
-/// <summary>A catalog object with its orbit, physically-derived mass/area (from SATCAT RCS), type (PAY, R/B, DEB, UNK) and name.</summary>
-public readonly record struct CatalogObject(OrbitalElements Elements, double MassKg, double AreaM2, bool IsIntact, string ObjectType = "PAY", string Name = "");
+/// <summary>A catalog object with its orbit, physically-derived mass/area (from SATCAT RCS), type (PAY, R/B, DEB, UNK), name,
+/// and whether it is a working satellite (on CelesTrak's active list).</summary>
+public readonly record struct CatalogObject(OrbitalElements Elements, double MassKg, double AreaM2, bool IsIntact, string ObjectType = "PAY", string Name = "",
+    bool IsActive = false);
 
 /// <summary>
 /// Loads the CelesTrak SATCAT (satcat.csv) and derives per-object mass and cross-section,

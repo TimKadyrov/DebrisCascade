@@ -78,6 +78,9 @@ public partial class MainWindow : Window
             LaunchRatePerYear = D(LaunchRate), LaunchAltKm = D(LaunchAlt),
             Responsive = Responsive.IsChecked == true, LossTolerance = D(LossTol),
             ExplosionsPerYear = D(Explosions), RemovalsPerYear = D(Removals),
+            WorkingSatellites = Working.IsChecked == true,
+            DisposalSuccess = D(DisposalPct) / 100.0, RocketBodyDisposal = D(RocketBodyPct) / 100.0,
+            AvoidanceSuccess = D(AvoidancePct) / 100.0, SatelliteLifetimeYears = D(LifetimeYr),
             SolarActivity = D(Solar), HorizonYears = D(Horizon),
         };
         if (bad is null) return inputs;

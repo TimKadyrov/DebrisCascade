@@ -75,12 +75,31 @@ public sealed class ConjunctionCascade
     public double LastLaunchThrottle { get; private set; } = 1.0;
     private double _launchAccrual;
 
+    /// <summary>
+    /// Working satellites, as in <see cref="KesslerEvolution.WorkingSatellites"/> (off by default): catalogued
+    /// satellites on the active list and new launches hold their altitude, dodge tracked (≥10 cm) partners
+    /// (collision rate cut by <see cref="ManoeuvrableFraction"/> × <see cref="AvoidanceSuccess"/>), are left dead
+    /// by any non-catastrophic hit, and retire after ~<see cref="SatelliteLifetimeYears"/> — deorbited with
+    /// probability <see cref="DisposalSuccess"/>, else dead in place. Launched rocket bodies are disposed of with
+    /// probability <see cref="RocketBodyDisposal"/>. Retirement is drawn per particle (whole-particle, unbiased).
+    /// </summary>
+    public bool WorkingSatellites { get; init; } = false;
+    public double SatelliteLifetimeYears { get; init; } = 5.0;
+    public double DisposalSuccess { get; init; } = 0.90;
+    public double RocketBodyDisposal { get; init; } = 0.80;
+    public double AvoidanceSuccess { get; init; } = 0.90;
+    public double ManoeuvrableFraction { get; init; } = 0.89;
+    public double DisposedTotal { get; private set; }
+    public double FailedDisposalTotal { get; private set; }
+    public double MissionKillsTotal { get; private set; }
+    public double TotalWorking() { double t = 0; for (int i = 0; i < _w.Count; i++) if (_alive[i] && _working[i]) t += _w[i]; return t; }
+
     private static readonly double[] LcEdges = BreakupModel.SizeBinEdges;
     private readonly Random _rng;
 
     private readonly List<OrbitalElements> _els = new();
     private readonly List<double> _epoch = new(), _mass = new(), _area = new(), _sqrtA = new(), _w = new();
-    private readonly List<bool> _alive = new(), _isNail = new();
+    private readonly List<bool> _alive = new(), _isNail = new(), _working = new();
     // Where each particle came from (catalog type PAY/R/B/DEB/UNK, BG-SMALL, BG-BELT, LAUNCH, FRAG, NAIL)
     // and, for catalog objects, its name — for diagnostics only; physics never reads them.
     private readonly List<string> _tag = new(), _name = new();
@@ -93,11 +112,33 @@ public sealed class ConjunctionCascade
     private static double MassFromLc(double lc) => BreakupModel.FragmentMassFromLc(lc);
     private static double AreaFromLc(double lc) => BreakupModel.AreaFromLc(lc);
 
-    private void Add(OrbitalElements el, double mass, double area, double weight, bool nail, string tag = "FRAG", string name = "")
+    private void Add(OrbitalElements el, double mass, double area, double weight, bool nail, string tag = "FRAG", string name = "",
+        bool working = false)
     {
         _tag.Add(tag); _name.Add(name);
         _els.Add(el); _epoch.Add(_simSec); _mass.Add(mass); _area.Add(area);
-        _sqrtA.Add(Math.Sqrt(area)); _w.Add(weight); _alive.Add(true); _isNail.Add(nail);
+        _sqrtA.Add(Math.Sqrt(area)); _w.Add(weight); _alive.Add(true); _isNail.Add(nail); _working.Add(working);
+    }
+
+    /// <summary>Tracked (≥10 cm, catalogued) particles: the ones a working satellite can see coming and dodge.</summary>
+    private bool IsTracked(int i) => _working[i] || (!_isNail[i] && _area[i] >= TrackableAreaM2);
+
+    /// <summary>Collision-rate factor for a pair: a working satellite dodges a tracked partner.</summary>
+    private double AvoidFactor(int i, int j)
+    {
+        if (!_working[i] && !_working[j]) return 1.0;
+        return IsTracked(_working[i] ? j : i) ? 1.0 - ManoeuvrableFraction * AvoidanceSuccess : 1.0;
+    }
+
+    /// <summary>Turn <paramref name="amount"/> of working particle <paramref name="i"/> into a dead satellite in
+    /// place (whole particle if that's all of it, else split off).</summary>
+    private void KillWorking(int i, double amount)
+    {
+        amount = Math.Min(amount, _w[i]); if (amount <= 0) return;
+        if (amount >= _w[i] - 1e-9) { _working[i] = false; _tag[i] = "DEAD"; return; }
+        _w[i] -= amount;
+        Add(_els[i], _mass[i], _area[i], amount, nail: false, tag: "DEAD");
+        _epoch[^1] = _epoch[i];
     }
 
     private static OrbitalElements Circular(double altKm, double incRad, double raan, double m)
@@ -134,7 +175,8 @@ public sealed class ConjunctionCascade
         {
             double alt = o.Elements.SemiMajorAxis - Constants.EarthRadiusKm;
             if (alt < minAltKm || alt > minAltKm + nShell * binKm) continue;
-            Add(o.Elements, o.MassKg, o.AreaM2, 1.0, nail: false, tag: o.ObjectType, name: o.Name);
+            Add(o.Elements, o.MassKg, o.AreaM2, 1.0, nail: false, tag: o.ObjectType, name: o.Name,
+                working: WorkingSatellites && o.IsActive);
         }
         SeedBackground(backgroundSmallTotal, backgroundSuperParticles, backgroundLargeTotal, nShell, minAltKm, binKm);
     }
@@ -192,7 +234,7 @@ public sealed class ConjunctionCascade
         double t = 0;
         for (int i = 0; i < _w.Count; i++)
         {
-            if (!_alive[i] || _isNail[i] || _area[i] < TrackableAreaM2) continue;
+            if (!_alive[i] || _isNail[i] || _working[i] || _area[i] < TrackableAreaM2) continue;
             double alt = _els[i].SemiMajorAxis - Constants.EarthRadiusKm;
             if (alt >= loKm && alt < hiKm) t += _w[i];
         }
@@ -280,7 +322,7 @@ public sealed class ConjunctionCascade
                         double vrel = Math.Sqrt(dvx * dvx + dvy * dvy + dvz * dvz) * 1000.0; // m/s
                         if (vrel <= 0 || FormationNeighbours(i, j, st)) continue;
                         double sigma = (_sqrtA[i] + _sqrtA[j]); sigma *= sigma; // m^2
-                        double lam = _w[i] * _w[j] * sigma * vrel * dtSub / Vcube;
+                        double lam = _w[i] * _w[j] * sigma * vrel * dtSub / Vcube * AvoidFactor(i, j);
                         int ev = Poisson(lam); if (ev == 0) continue;
                         double mt = Math.Max(_mass[i], _mass[j]), mp = Math.Min(_mass[i], _mass[j]);
                         bool cat = Lethality.IsCatastrophic(mp, vrel, mt);
@@ -301,7 +343,7 @@ public sealed class ConjunctionCascade
             double alt = el.SemiMajorAxis - Constants.EarthRadiusKm;
             double rLo = (Constants.EarthRadiusKm + Math.Floor(alt / 50.0) * 50.0) * 1000.0, rHi = rLo + 50_000.0;
             double vShell = 4.0 / 3.0 * Math.PI * (rHi * rHi * rHi - rLo * rLo * rLo);
-            double lam = 0.5 * _w[i] * (_w[i] - 1) * 4.0 * _area[i] * selfVrel * dtSec / vShell;   // sigma = (2 sqrt A)^2
+            double lam = 0.5 * _w[i] * (_w[i] - 1) * 4.0 * _area[i] * selfVrel * dtSec / vShell * AvoidFactor(i, i);   // sigma = (2 sqrt A)^2
             int ev = Poisson(lam); if (ev == 0) continue;
             el.ComputeSecularRates();
             var (pos, vel) = el.StateAt(_simSec - _epoch[i] + _rng.NextDouble() * Constants.TwoPi / el.MeanMotion);
@@ -327,7 +369,12 @@ public sealed class ConjunctionCascade
                 if (_w[h.I] <= 1e-9) _alive[h.I] = false; if (_w[h.J] <= 1e-9) _alive[h.J] = false;
                 catastrophic += frac;
             }
-            else { frac = Math.Min(events, _w[proj]); _w[proj] -= frac; if (_w[proj] <= 1e-9) _alive[proj] = false; }
+            else
+            {
+                frac = Math.Min(events, _w[proj]); _w[proj] -= frac; if (_w[proj] <= 1e-9) _alive[proj] = false;
+                int tgt = proj == h.I ? h.J : h.I;   // a working satellite that survives the hit is still dead
+                if (tgt != proj && _working[tgt]) { double k0 = Math.Min(frac, _w[tgt]); KillWorking(tgt, k0); MissionKillsTotal += k0; }
+            }
 
             // The breakup spectrum uses this encounter's own relative speed.
             double meff = h.Cat ? (mt + mp) : BreakupModel.EffectiveMass(mt, mp, h.Vrel);
@@ -339,6 +386,7 @@ public sealed class ConjunctionCascade
 
         ApplyExplosions(dtSec);
         ApplyRemoval(dtSec);
+        ApplyRetirement(dtSec);
         DragStep(dtSec);
         ApplyLaunch(dtSec);
         _simSec += dtSec;
@@ -363,7 +411,7 @@ public sealed class ConjunctionCascade
         var cand = new List<(double Score, int I)>();
         for (int i = 0; i < _els.Count; i++)
         {
-            if (!_alive[i] || _isNail[i] || _mass[i] < IntactMinMassKg) continue;
+            if (!_alive[i] || _isNail[i] || _working[i] || _mass[i] < IntactMinMassKg) continue;
             int s = Shell(i); if (s < 0) continue;
             double rLo = reM + (minAlt + s * bin) * 1000, rHi = rLo + bin * 1000;
             double V = 4.0 / 3.0 * Math.PI * (rHi * rHi * rHi - rLo * rLo * rLo);
@@ -407,8 +455,10 @@ public sealed class ConjunctionCascade
         _launchAccrual += LaunchRatePerYear * throttle * dtSec / secYr;
         if (_launchAccrual < 1.0) return;
         double batch = _launchAccrual; _launchAccrual = 0;
-        Add(Circular(LaunchAltKm, (45 + 45 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 180.0, 1.78, 0.85 * batch, false, tag: "LAUNCH");
-        Add(Circular(LaunchAltKm, (45 + 45 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 2400.0, 18.0, 0.15 * batch, false, tag: "LAUNCH");
+        Add(Circular(LaunchAltKm, (45 + 45 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 180.0, 1.78, 0.85 * batch, false, tag: "LAUNCH",
+            working: WorkingSatellites);
+        double rb = 0.15 * batch * (WorkingSatellites ? 1.0 - RocketBodyDisposal : 1.0);
+        if (rb > 0) Add(Circular(LaunchAltKm, (45 + 45 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 2400.0, 18.0, rb, false, tag: "LAUNCH");
     }
 
     private static readonly double[] FragMass = Enumerable.Range(0, LcEdges.Length - 1).Select(c => MassFromLc(Math.Sqrt(LcEdges[c] * LcEdges[c + 1]))).ToArray();
@@ -422,7 +472,7 @@ public sealed class ConjunctionCascade
         var idx = new List<int>(); var cum = new List<double>(); double acc = 0;
         for (int i = 0; i < _els.Count; i++)
         {
-            if (!_alive[i] || _isNail[i] || _mass[i] < IntactMinMassKg) continue;
+            if (!_alive[i] || _isNail[i] || _working[i] || _mass[i] < IntactMinMassKg) continue;
             acc += _w[i] * _mass[i]; idx.Add(i); cum.Add(acc);
         }
         if (_explPerKgSec < 0) _explPerKgSec = acc > 0 ? ExplosionsPerYear / (365.25 * Constants.SecondsPerDay) / acc : 0;
@@ -460,12 +510,29 @@ public sealed class ConjunctionCascade
         }
     }
 
+    /// <summary>End of life, drawn per working particle: with probability 1 − e^(−dt/τ) it retires; the deorbited
+    /// share leaves LEO and the rest is left dead in place.</summary>
+    private void ApplyRetirement(double dtSec)
+    {
+        if (!WorkingSatellites || SatelliteLifetimeYears <= 0) return;
+        double f = 1.0 - Math.Exp(-dtSec / (SatelliteLifetimeYears * 365.25 * Constants.SecondsPerDay));
+        int n = _els.Count;
+        for (int i = 0; i < n; i++)
+        {
+            if (!_alive[i] || !_working[i] || _rng.NextDouble() >= f) continue;
+            double w = _w[i], dead = w * (1.0 - DisposalSuccess);
+            DisposedTotal += w - dead; FailedDisposalTotal += dead;
+            if (dead <= 1e-9) { _alive[i] = false; continue; }
+            _w[i] = dead; _working[i] = false; _tag[i] = "DEAD";
+        }
+    }
+
     private void DragStep(double dtSec)
     {
         double reentryA = Constants.EarthRadiusKm + AtmosphericDrag.ReentryAltitudeKm;
         for (int i = 0; i < _els.Count; i++)
         {
-            if (!_alive[i]) continue;
+            if (!_alive[i] || _working[i]) continue;   // station-keeping
             var el = _els[i];
             double rate = -AtmosphericDrag.SemiMajorAxisDecayRateKmPerSec(el.SemiMajorAxis, _area[i] / _mass[i], SolarActivity);
             double a = el.SemiMajorAxis - rate * dtSec;
@@ -477,24 +544,24 @@ public sealed class ConjunctionCascade
 
     private void Coalesce()
     {
-        var acc = new Dictionary<(int, int, bool), double[]>();
-        var rep = new Dictionary<(int, int, bool), OrbitalElements>();
-        var repTag = new Dictionary<(int, int, bool), (string Tag, string Name)>();
+        var acc = new Dictionary<(int, int, bool, bool), double[]>();
+        var rep = new Dictionary<(int, int, bool, bool), OrbitalElements>();
+        var repTag = new Dictionary<(int, int, bool, bool), (string Tag, string Name)>();
         for (int i = 0; i < _els.Count; i++)
         {
             if (!_alive[i]) continue;
             int skey = (int)((_els[i].SemiMajorAxis - Constants.EarthRadiusKm) / 50.0);
             int mkey = (int)Math.Round(Math.Log(_mass[i]) * 4);
-            var key = (skey, mkey, _isNail[i]);
+            var key = (skey, mkey, _isNail[i], _working[i]);
             if (!acc.TryGetValue(key, out var v)) { v = new double[3]; v[1] = _mass[i]; v[2] = _area[i]; acc[key] = v; rep[key] = _els[i]; repTag[key] = (_tag[i], _name[i]); }
             v[0] += _w[i];
         }
-        _els.Clear(); _epoch.Clear(); _mass.Clear(); _area.Clear(); _sqrtA.Clear(); _w.Clear(); _alive.Clear(); _isNail.Clear();
+        _els.Clear(); _epoch.Clear(); _mass.Clear(); _area.Clear(); _sqrtA.Clear(); _w.Clear(); _alive.Clear(); _isNail.Clear(); _working.Clear();
         _tag.Clear(); _name.Clear();
         foreach (var (key, v) in acc)
         {
             _els.Add(rep[key]); _epoch.Add(_simSec); _mass.Add(v[1]); _area.Add(v[2]);
-            _sqrtA.Add(Math.Sqrt(v[2])); _w.Add(v[0]); _alive.Add(true); _isNail.Add(key.Item3);
+            _sqrtA.Add(Math.Sqrt(v[2])); _w.Add(v[0]); _alive.Add(true); _isNail.Add(key.Item3); _working.Add(key.Item4);
             _tag.Add(repTag[key].Tag); _name.Add(repTag[key].Name);
         }
         Coarsened = true;
@@ -506,14 +573,14 @@ public sealed class ConjunctionCascade
         for (int r = 0; r < _els.Count; r++)
         {
             if (!_alive[r]) continue;
-            if (w != r) { _els[w] = _els[r]; _epoch[w] = _epoch[r]; _mass[w] = _mass[r]; _area[w] = _area[r]; _sqrtA[w] = _sqrtA[r]; _w[w] = _w[r]; _alive[w] = true; _isNail[w] = _isNail[r]; _tag[w] = _tag[r]; _name[w] = _name[r]; }
+            if (w != r) { _els[w] = _els[r]; _epoch[w] = _epoch[r]; _mass[w] = _mass[r]; _area[w] = _area[r]; _sqrtA[w] = _sqrtA[r]; _w[w] = _w[r]; _alive[w] = true; _isNail[w] = _isNail[r]; _working[w] = _working[r]; _tag[w] = _tag[r]; _name[w] = _name[r]; }
             w++;
         }
         int rem = _els.Count - w;
         if (rem > 0)
         {
             _els.RemoveRange(w, rem); _epoch.RemoveRange(w, rem); _mass.RemoveRange(w, rem); _area.RemoveRange(w, rem);
-            _sqrtA.RemoveRange(w, rem); _w.RemoveRange(w, rem); _alive.RemoveRange(w, rem); _isNail.RemoveRange(w, rem);
+            _sqrtA.RemoveRange(w, rem); _w.RemoveRange(w, rem); _alive.RemoveRange(w, rem); _isNail.RemoveRange(w, rem); _working.RemoveRange(w, rem);
             _tag.RemoveRange(w, rem); _name.RemoveRange(w, rem);
         }
     }
@@ -750,7 +817,7 @@ public sealed class ConjunctionCascade
     public CascadeResult Run(double horizonYears = 50, double dtDays = 60)
     {
         var yr = new List<double> { 0 }; var tot = new List<double> { TotalObjects() }; var trk = new List<double> { TotalTrackable() }; var belt = new List<double> { TotalTrackable(BeltLoKm, BeltHiKm) };
-        var cs = new List<double> { TotalCrossSection() }; var cpy = new List<double> { 0 }; var nl = new List<double> { TotalNails() };
+        var cs = new List<double> { TotalCrossSection() }; var cpy = new List<double> { 0 }; var nl = new List<double> { TotalNails() }; var wk = new List<double> { TotalWorking() };
         double catAccum = 0, t = 0, nextYear = 0, doneDays = 0, totalDays = horizonYears * 365.25;
         // Last step is shortened so the run ends exactly on the horizon (and records its final year).
         while (doneDays < totalDays - 1e-9)
@@ -763,10 +830,10 @@ public sealed class ConjunctionCascade
             if (t >= nextYear + 1 - 1e-9)
             {
                 nextYear += 1;
-                yr.Add(t); tot.Add(TotalObjects()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); cs.Add(TotalCrossSection()); cpy.Add(catAccum); nl.Add(TotalNails());
+                yr.Add(t); tot.Add(TotalObjects()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); cs.Add(TotalCrossSection()); cpy.Add(catAccum); nl.Add(TotalNails()); wk.Add(TotalWorking());
                 catAccum = 0;
             }
         }
-        return new CascadeResult { Years = yr.ToArray(), TotalObjects = tot.ToArray(), TotalCrossSection = cs.ToArray(), CatastrophicPerYear = cpy.ToArray(), SurvivingNails = nl.ToArray(), TrackableObjects = trk.ToArray(), BeltTrackableObjects = belt.ToArray() };
+        return new CascadeResult { Years = yr.ToArray(), TotalObjects = tot.ToArray(), TotalCrossSection = cs.ToArray(), CatastrophicPerYear = cpy.ToArray(), SurvivingNails = nl.ToArray(), TrackableObjects = trk.ToArray(), BeltTrackableObjects = belt.ToArray(), WorkingSatellites = wk.ToArray() };
     }
 }

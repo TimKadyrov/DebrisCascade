@@ -89,6 +89,18 @@
                     <TextBox x:Name="Explosions" Text="4"/>
                     <TextBlock Style="{StaticResource Lbl}" Text="Debris removal (objects/yr, riskiest first)"/>
                     <TextBox x:Name="Removals" Text="0"/>
+                    <CheckBox x:Name="Working" Content="Working satellites (deorbit + dodge)" Margin="0,8,0,0"
+                              ToolTip="Off: every satellite is dead from day one. On: active and launched satellites hold orbit, dodge tracked objects and are deorbited at end of life (box and cube engines)."/>
+                    <StackPanel IsEnabled="{Binding IsChecked, ElementName=Working}">
+                        <TextBlock Style="{StaticResource Lbl}" Text="Satellites deorbited at end of life (%)"/>
+                        <TextBox x:Name="DisposalPct" Text="90"/>
+                        <TextBlock Style="{StaticResource Lbl}" Text="Rocket bodies disposed of (%)"/>
+                        <TextBox x:Name="RocketBodyPct" Text="80"/>
+                        <TextBlock Style="{StaticResource Lbl}" Text="Conjunctions avoided (%, tracked objects)"/>
+                        <TextBox x:Name="AvoidancePct" Text="90"/>
+                        <TextBlock Style="{StaticResource Lbl}" Text="Satellite lifetime (years)"/>
+                        <TextBox x:Name="LifetimeYr" Text="5"/>
+                    </StackPanel>
                     <TextBlock Style="{StaticResource Lbl}" Text="Solar activity (0.5 min .. 4 max)"/>
                     <TextBox x:Name="Solar" Text="1.0"/>
                     <TextBlock Style="{StaticResource Lbl}" Text="Horizon (years)"/>

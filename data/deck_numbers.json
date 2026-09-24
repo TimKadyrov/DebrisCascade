@@ -1,5 +1,5 @@
 {
-  "generatedUtc": "2026-09-24T16:20:02.003212Z",
+  "generatedUtc": "2026-09-24T17:30:59.1087948Z",
   "horizonYears": 50,
   "beltAltKm": 900,
   "nailsPerBarrel": 200000,
@@ -124,6 +124,222 @@
       ]
     }
   ],
+  "working": {
+    "beltToday": 8270,
+    "activeSatellitesLeo": 14684,
+    "launchAltKm": 900,
+    "rates": [
+      0,
+      50,
+      500
+    ],
+    "lifetimeYears": 5,
+    "manoeuvrableFraction": 0.89,
+    "sweep": [
+      {
+        "setting": "neverDeorbited",
+        "disposalSuccess": 0,
+        "rocketBodyDisposal": 0,
+        "avoidanceSuccess": 0,
+        "runs": [
+          {
+            "beltEnd": 11206.516639272748,
+            "growth": 1.3550806093437422,
+            "catastrophicYear50": 0.6885304000036954,
+            "workingEnd": 0,
+            "disposed": 0,
+            "failedDisposal": 0,
+            "missionKills": 0,
+            "avoided": 0
+          },
+          {
+            "beltEnd": 22909.58748504517,
+            "growth": 2.7702040489776505,
+            "catastrophicYear50": 2.191214117671897,
+            "workingEnd": 0,
+            "disposed": 0,
+            "failedDisposal": 0,
+            "missionKills": 0,
+            "avoided": 0
+          },
+          {
+            "beltEnd": 718476.7553818725,
+            "growth": 86.87747948994831,
+            "catastrophicYear50": 1651.4994852416773,
+            "workingEnd": 0,
+            "disposed": 0,
+            "failedDisposal": 0,
+            "missionKills": 0,
+            "avoided": 0
+          }
+        ]
+      },
+      {
+        "setting": "poor",
+        "disposalSuccess": 0.7,
+        "rocketBodyDisposal": 0.5,
+        "avoidanceSuccess": 0.5,
+        "runs": [
+          {
+            "beltEnd": 11317.804625272369,
+            "growth": 1.3685374395734424,
+            "catastrophicYear50": 0.6753120512692894,
+            "workingEnd": 0.661398183317433,
+            "disposed": 10246.673150063685,
+            "failedDisposal": 4391.4313500273265,
+            "missionKills": 10.132308048535583,
+            "avoided": 4.975631011500132
+          },
+          {
+            "beltEnd": 14876.562835525023,
+            "growth": 1.7988588676571975,
+            "catastrophicYear50": 1.021286273362193,
+            "workingEnd": 212.53699643767365,
+            "disposed": 11578.44120495625,
+            "failedDisposal": 4962.189087838393,
+            "missionKills": 20.13905821799607,
+            "avoided": 5.420973252530556
+          },
+          {
+            "beltEnd": 144708.00789397644,
+            "growth": 17.497945331798842,
+            "catastrophicYear50": 66.70532740826302,
+            "workingEnd": 2011.2488626278978,
+            "disposed": 23355.940171274793,
+            "failedDisposal": 10009.688644831853,
+            "missionKills": 483.1302972740443,
+            "avoided": 33.41448006898193
+          }
+        ]
+      },
+      {
+        "setting": "baseline",
+        "disposalSuccess": 0.9,
+        "rocketBodyDisposal": 0.8,
+        "avoidanceSuccess": 0.9,
+        "runs": [
+          {
+            "beltEnd": 10863.906013490023,
+            "growth": 1.3136524804703775,
+            "catastrophicYear50": 0.6380184324602529,
+            "workingEnd": 0.6622621258364226,
+            "disposed": 13181.27650533636,
+            "failedDisposal": 1464.5862783707062,
+            "missionKills": 9.665191017282641,
+            "avoided": 8.261602657622214
+          },
+          {
+            "beltEnd": 11967.660349442618,
+            "growth": 1.4471173336689986,
+            "catastrophicYear50": 0.7287088712002898,
+            "workingEnd": 212.79810155565258,
+            "disposed": 14894.506216252517,
+            "failedDisposal": 1654.9451351392033,
+            "missionKills": 18.789030767642508,
+            "avoided": 8.81978839407654
+          },
+          {
+            "beltEnd": 35405.19720976229,
+            "growth": 4.281160484856383,
+            "catastrophicYear50": 4.729011543113017,
+            "workingEnd": 2103.173909353066,
+            "disposed": 30263.785168526607,
+            "failedDisposal": 3362.642796502931,
+            "missionKills": 169.5089001634338,
+            "avoided": 31.680341079895538
+          }
+        ]
+      },
+      {
+        "setting": "best",
+        "disposalSuccess": 0.99,
+        "rocketBodyDisposal": 0.95,
+        "avoidanceSuccess": 0.99,
+        "runs": [
+          {
+            "beltEnd": 10682.413320160256,
+            "growth": 1.2917065683386042,
+            "catastrophicYear50": 0.6232878661430725,
+            "workingEnd": 0.6624569905120363,
+            "disposed": 14501.07533212972,
+            "failedDisposal": 146.47550840535123,
+            "missionKills": 9.556269521623097,
+            "avoided": 8.746358260164985
+          },
+          {
+            "beltEnd": 10908.002027817014,
+            "growth": 1.3189845257336172,
+            "catastrophicYear50": 0.6419387334694301,
+            "workingEnd": 212.87495796149435,
+            "disposed": 16385.932799168968,
+            "failedDisposal": 165.5144727188784,
+            "missionKills": 18.373530700648107,
+            "avoided": 9.235373452388957
+          },
+          {
+            "beltEnd": 13912.75917330302,
+            "growth": 1.682316707775456,
+            "catastrophicYear50": 0.9540245650521724,
+            "workingEnd": 2120.2243599347416,
+            "disposed": 33340.34662218969,
+            "failedDisposal": 336.7711780019136,
+            "missionKills": 107.92888338013812,
+            "avoided": 21.646796122931836
+          }
+        ]
+      }
+    ],
+    "levers500": {
+      "disposalOnly": {
+        "beltEnd": 48844.436475766015,
+        "growth": 5.906219646404597,
+        "catastrophicYear50": 8.882566915905848,
+        "workingEnd": 2086.871516637118,
+        "disposed": 30189.844452625322,
+        "failedDisposal": 3354.4271614028457,
+        "missionKills": 222.65490701451935,
+        "avoided": 0
+      },
+      "avoidanceOnly": {
+        "beltEnd": 645001.2576930643,
+        "growth": 77.99289693991103,
+        "catastrophicYear50": 1325.3825097246602,
+        "workingEnd": 1669.7335870066852,
+        "disposed": 0,
+        "failedDisposal": 32526.74236457581,
+        "missionKills": 1677.7462071188775,
+        "avoided": 132.43534884670188
+      }
+    },
+    "cubeBaseline": [
+      {
+        "launchesPerYear": 50,
+        "conjunction": [
+          1.2120475294151016,
+          1.382357164739586,
+          1.0254588948115158,
+          0.8986359598561655,
+          0.9695411696405978,
+          1.2044917015568626,
+          1.1080042343128427,
+          0.9630727082591101
+        ]
+      },
+      {
+        "launchesPerYear": 500,
+        "conjunction": [
+          5.0578822166695225,
+          4.228544720907892,
+          2.0987388273055396,
+          3.549069122063879,
+          2.8753625107290492,
+          5.990963075215704,
+          3.8671646373529414,
+          2.505802479977541
+        ]
+      }
+    ]
+  },
   "catalog": {
     "leoObjects": 29779,
     "totalTracked": 32579,

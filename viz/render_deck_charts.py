@@ -174,3 +174,38 @@ for y, (_, v, c) in zip(ys, YARD):
     ax.text(v * 1.25, y, f"+{float(f'{v:.2g}'):,.0f}", va="center", fontsize=10, weight="bold", color=INK)
 tag(f, "box model · everything at 900 km (ASAT 865 km)")
 save(f, "deck_comparison.png")
+
+# --- Working satellites: disposal + avoidance vs never deorbited (belt debris after 50 yr) ---------
+if "working" in D:
+    W = D["working"]; rates = W["rates"]; sw = {s["setting"]: s for s in W["sweep"]}
+    order = [("neverDeorbited", "never deorbited", RED), ("poor", "poor: 70% / 50% / 50%", ORANGE),
+             ("baseline", "today's practice: 90% / 80% / 90%", BLUE), ("best", "best: 99% / 95% / 99%", GREEN)]
+    groups = [r for r in rates if r > 0]
+    f, ax = fig(11.56, 3.89, [0.075, 0.2, 0.90, 0.74])
+    bw = 0.19
+    for gi, rate in enumerate(groups):
+        ri = rates.index(rate)
+        for k, (key, lab, col) in enumerate(order):
+            g = sw[key]["runs"][ri]["growth"]; x = gi + (k - 1.5) * bw
+            ax.bar(x, g, width=bw * 0.92, color=col, label=lab if gi == 0 else None)
+            ax.text(x, g * 1.08, f"×{g:.1f}" if g < 10 else f"×{g:.0f}", ha="center", va="bottom", fontsize=9.5, weight="bold", color=INK)
+            if key == "baseline":
+                cb = next((c for c in W["cubeBaseline"] if c["launchesPerYear"] == rate), None)
+                if cb:
+                    v = np.array(cb["conjunction"]); m = v.mean()
+                    ax.errorbar(x + bw * 0.28, m, yerr=[[m - v.min()], [v.max() - m]], fmt="D", ms=4.5, color=INK, mfc="white",
+                                capsize=3, lw=1, label="cube cross-check (8 seeds)" if gi == 0 else None)
+    base0 = sw["neverDeorbited"]["runs"][rates.index(0)]["growth"]
+    ax.axhline(base0, color=MUTE, lw=1, ls=(0, (4, 3)))
+    ax.text(-0.92, base0 * 1.04, f"nothing added ×{base0:.2f}", color=MUTE, fontsize=8.5, ha="left", va="bottom")
+    ax.set_yscale("log"); ax.set_ylim(0.8, 200)
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"×{v:g}"))
+    ax.set_xticks(range(len(groups)))
+    ax.set_xticklabels([f"{r:.0f} satellites + rocket bodies a year at 900 km" for r in groups], fontsize=10)
+    ax.set_xlim(-0.95, len(groups) - 0.45)
+    ax.set_ylabel("belt debris ≥10 cm after 50 yr", fontsize=9.5); ax.tick_params(axis="y", labelsize=9)
+    h, l = ax.get_legend_handles_labels(); o = [i for i, x in enumerate(l) if not x.startswith("cube")] + [i for i, x in enumerate(l) if x.startswith("cube")]
+    ax.legend([h[i] for i in o], [l[i] for i in o], loc="upper left", fontsize=8.5, frameon=False,
+              title="deorbited satellites / rocket bodies / conjunctions avoided", title_fontsize=8.5, ncol=1)
+    tag(f, "box model · 50 years · vs today's belt objects ≥10 cm; working satellites not counted as debris")
+    save(f, "deck_working.png")

@@ -73,6 +73,64 @@ public class EvolutionTests
     }
 
     [Fact]
+    public void WorkingSatellites_RetireWithTheSetDisposalRate()
+    {
+        var cat = SynthCatalog(4000, 750, 1050);
+        var m = new KesslerEvolution(new NailSpec())
+        {
+            WorkingSatellites = true, LaunchRatePerYear = 100, DisposalSuccess = 0.9, SatelliteLifetimeYears = 5,
+        };
+        m.SeedFromCatalog(cat);
+        var r = m.Run(horizonYears: 20, dtDays: 10);
+
+        // 85 working satellites a year for 20 years, 5-year life: about 85·(20 − 5·(1 − e^-4)) ≈ 1,280 retired,
+        // 90% of them deorbited. The fleet settles near 85·5 = 425.
+        double retired = m.DisposedTotal + m.FailedDisposalTotal;
+        Assert.InRange(retired, 1150, 1400);
+        Assert.Equal(0.9, m.DisposedTotal / retired, 3);
+        Assert.InRange(r.WorkingSatellites[^1], 380, 440);
+    }
+
+    [Fact]
+    public void WorkingSatellites_WithPerfectDisposal_LeaveTheBeltBelowDerelictTraffic()
+    {
+        var cat = SynthCatalog(4000, 750, 1050);
+        double Belt(bool working, double pmd, double avoid)
+        {
+            var m = new KesslerEvolution(new NailSpec())
+            {
+                LaunchRatePerYear = 200, WorkingSatellites = working, DisposalSuccess = pmd,
+                RocketBodyDisposal = pmd, AvoidanceSuccess = avoid,
+            };
+            m.SeedFromCatalog(cat);
+            return m.Run(horizonYears: 30, dtDays: 10).BeltTrackableObjects[^1];
+        }
+        double derelict = Belt(false, 0, 0), poor = Belt(true, 0.5, 0.5), perfect = Belt(true, 1.0, 1.0);
+        Assert.True(perfect < poor && poor < derelict, $"perfect {perfect:N0}, poor {poor:N0}, derelict {derelict:N0}");
+    }
+
+    [Fact]
+    public void WorkingSatellites_DodgeTrackedObjects_ButNotSmallDebris()
+    {
+        var cat = SynthCatalog(4000, 750, 1050);
+        (double Avoided, double Killed) Run(double avoid)
+        {
+            var m = new KesslerEvolution(new NailSpec())
+            {
+                LaunchRatePerYear = 200, WorkingSatellites = true, AvoidanceSuccess = avoid, ManoeuvrableFraction = 1.0,
+            };
+            m.SeedFromCatalog(cat);
+            m.Run(horizonYears: 10, dtDays: 10);
+            return (m.AvoidedTotal, m.MissionKillsTotal);
+        }
+        var none = Run(0.0); var full = Run(1.0);
+        Assert.Equal(0, none.Avoided);
+        Assert.True(full.Avoided > 0);
+        // Mission kills come from untracked 1–10 cm debris, which avoidance can't touch.
+        Assert.True(full.Killed > 0.5 * none.Killed, $"kills with avoidance {full.Killed:F1} vs without {none.Killed:F1}");
+    }
+
+    [Fact]
     public void Run_EndsExactlyOnTheHorizon()
     {
         var m = new KesslerEvolution(new NailSpec());

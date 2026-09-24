@@ -16,6 +16,8 @@ public sealed class CascadeResult
     public double[] TrackableObjects = [];
     /// <summary>Objects ≥10 cm in the belt (default 700–1100 km) — where a cascade can persist.</summary>
     public double[] BeltTrackableObjects = [];
+    /// <summary>Working satellites (cube engine with WorkingSatellites on); empty otherwise.</summary>
+    public double[] WorkingSatellites = [];
 }
 
 /// <summary>

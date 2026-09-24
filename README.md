@@ -10,7 +10,9 @@ nuisance at high altitude, but it does **not** trigger Kessler syndrome or rende
 unusable. LEO's debris belt (700–1,100 km) *already grows slowly on its own*; whether it runs
 away is governed by **launch and removal policy**, against which a barrel of nails is a
 rounding error (no number of barrels doubles the belt's ≥10 cm population in 50 years; ~10
-removals a year hold it flat).
+removals a year hold it flat). Disposal reliability is the lever: 500 satellites and rocket bodies
+a year left dead at 900 km grow the belt ×87 in 50 years, but with working satellites deorbited at
+today's 90% rate, the same traffic grows it only ×4.3.
 
 See **[SUMMARY.md](SUMMARY.md)** for a plain-language write-up, including the altitude analysis.
 
@@ -96,6 +98,16 @@ export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # or a generic Wind
 - Active debris removal: `RemovalsPerYear` takes large intact objects out of orbit, highest
   mass × collision rate first (the LEGEND selection criterion); `--deck` reports how many a year
   hold the belt flat. Both explosion and removal rates are fields in the WPF tool.
+- Working satellites: `WorkingSatellites` (box and cube engines; off by default, so every other
+  result keeps added objects dead from day one). Catalogued satellites on CelesTrak's active list
+  and new launches hold their altitude and dodge tracked (≥10 cm) objects: the collision rate with
+  those is cut by `ManoeuvrableFraction` × `AvoidanceSuccess` (0.89 × 0.90). Untracked 1–10 cm
+  debris can't be dodged, and any non-catastrophic hit leaves the satellite dead. After
+  `SatelliteLifetimeYears` (5) a satellite is deorbited with probability `DisposalSuccess` (0.90),
+  else left dead in place; launched rocket bodies are disposed of with `RocketBodyDisposal` (0.80).
+  The defaults follow the evidence: the NASA/FCC/IADC 90% benchmark, ESA's 2025 rocket-body figure,
+  and McDowell's manoeuvrable share of active satellites. `--deck` sweeps poor / today's practice /
+  best settings and cross-checks the baseline with the cube engine (8 seeds). Not yet in the WPF tool.
 - Box model uses a well-mixed shell assumption at 10 km/s. The conjunction Cube method uses real
   orbit geometry; `--calibrate` compares the two on the production population and they agree
   within ~5% (all collisions 1.01×, catastrophic 0.96× at 10,000 snapshots). The cube engine

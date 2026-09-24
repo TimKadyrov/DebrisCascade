@@ -26,6 +26,13 @@ public sealed class ScenarioInputs
     public double ExplosionsPerYear { get; set; } = 4.0;
     /// <summary>Active debris removal: large intact objects removed per year, riskiest first (0 = none).</summary>
     public double RemovalsPerYear { get; set; } = 0.0;
+    /// <summary>Working satellites that hold orbit, dodge tracked objects and are deorbited at end of life
+    /// (box and cube engines; see KesslerEvolution.WorkingSatellites). Off = every satellite dead from day one.</summary>
+    public bool WorkingSatellites { get; set; } = false;
+    public double DisposalSuccess { get; set; } = 0.90;
+    public double RocketBodyDisposal { get; set; } = 0.80;
+    public double AvoidanceSuccess { get; set; } = 0.90;
+    public double SatelliteLifetimeYears { get; set; } = 5.0;
 }
 
 /// <summary>The loaded catalog plus its provenance and derived stats.</summary>
@@ -42,6 +49,8 @@ public sealed class CatalogBundle
     public bool IncludesDebris { get; init; }
     /// <summary>LEO object counts by SATCAT type (PAY, R/B, DEB, UNK).</summary>
     public IReadOnlyDictionary<string, int> CountByType { get; init; } = new Dictionary<string, int>();
+    /// <summary>LEO payloads on CelesTrak's active list — working satellites.</summary>
+    public int ActiveCount { get; init; }
 }
 
 /// <summary>Orchestrates the model runs from a set of inputs — the reusable analysis layer.</summary>
@@ -89,6 +98,16 @@ public static class Scenarios
             }
         }
 
+        // Which objects are working satellites: the CelesTrak active list for the full catalog; every
+        // object when the orbits already are CelesTrak's "active" group.
+        HashSet<int>? activeIds = null;
+        if (full)
+        {
+            try { activeIds = (await new CelesTrakClient(dataDir).GetGroupAsync("active")).Select(t => t.NoradId).ToHashSet(); }
+            catch { activeIds = new HashSet<int>(); }
+        }
+        bool allActive = !full && offlineFile is null && group == "active";
+
         int withRcs = 0;
         var objs = new List<CatalogObject>();
         foreach (var t in tles)
@@ -101,7 +120,8 @@ public static class Scenarios
                 (mass, area) = Satcat.DeriveMassArea(rec); intact = Satcat.IsIntact(rec.ObjectType); type = rec.ObjectType;
                 if (rec.RcsM2.HasValue) withRcs++;
             }
-            objs.Add(new CatalogObject(el, mass, area, intact, type, t.Name));
+            bool active = type == "PAY" && (allActive || (activeIds?.Contains(t.NoradId) ?? false));
+            objs.Add(new CatalogObject(el, mass, area, intact, type, t.Name, active));
         }
         var pay = objs.Where(o => o.ObjectType == "PAY").ToList();
         if (pay.Count == 0) pay = objs;
@@ -112,6 +132,7 @@ public static class Scenarios
             MeanMassKg = pay.Count > 0 ? pay.Average(o => o.MassKg) : 180.0,
             IncludesDebris = full,
             CountByType = objs.GroupBy(o => o.ObjectType).ToDictionary(g => g.Key, g => g.Count()),
+            ActiveCount = objs.Count(o => o.IsActive),
         };
     }
 
@@ -126,9 +147,9 @@ public static class Scenarios
     public static (EvolutionResult Baseline, EvolutionResult Barrel) Evolution(IReadOnlyList<CatalogObject> cat, ScenarioInputs i)
     {
         var nail = MakeNail(i);
-        var b = new KesslerEvolution(nail) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear };
+        var b = new KesslerEvolution(nail) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear, WorkingSatellites = i.WorkingSatellites, DisposalSuccess = i.DisposalSuccess, RocketBodyDisposal = i.RocketBodyDisposal, AvoidanceSuccess = i.AvoidanceSuccess, SatelliteLifetimeYears = i.SatelliteLifetimeYears };
         b.SeedFromCatalog(cat);
-        var k = new KesslerEvolution(nail) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear };
+        var k = new KesslerEvolution(nail) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear, WorkingSatellites = i.WorkingSatellites, DisposalSuccess = i.DisposalSuccess, RocketBodyDisposal = i.RocketBodyDisposal, AvoidanceSuccess = i.AvoidanceSuccess, SatelliteLifetimeYears = i.SatelliteLifetimeYears };
         k.SeedFromCatalog(cat); k.InjectBarrel(i.AltKm, i.NailCount);
         return (b.Run(i.HorizonYears, 10), k.Run(i.HorizonYears, 10));
     }
@@ -146,9 +167,9 @@ public static class Scenarios
     public static (CascadeResult Baseline, CascadeResult Barrel, bool UsedGpu) Conjunction(IReadOnlyList<CatalogObject> cat, ScenarioInputs i)
     {
         var nail = MakeNail(i); var cloud = DeployCloud(i);
-        var b = new ConjunctionCascade(seed: 1) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear };
+        var b = new ConjunctionCascade(seed: 1) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear, WorkingSatellites = i.WorkingSatellites, DisposalSuccess = i.DisposalSuccess, RocketBodyDisposal = i.RocketBodyDisposal, AvoidanceSuccess = i.AvoidanceSuccess, SatelliteLifetimeYears = i.SatelliteLifetimeYears };
         b.SeedFromCatalog(cat);
-        var k = new ConjunctionCascade(seed: 1) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear };
+        var k = new ConjunctionCascade(seed: 1) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear, WorkingSatellites = i.WorkingSatellites, DisposalSuccess = i.DisposalSuccess, RocketBodyDisposal = i.RocketBodyDisposal, AvoidanceSuccess = i.AvoidanceSuccess, SatelliteLifetimeYears = i.SatelliteLifetimeYears };
         k.SeedFromCatalog(cat); k.InjectBarrel(cloud, nail, 3000, i.NailCount);
         var br = b.Run(i.HorizonYears, 60); var kr = k.Run(i.HorizonYears, 60);
         return (br, kr, b.UsedGpu);
@@ -160,7 +181,7 @@ public static class Scenarios
         var nail = MakeNail(i);
         var g = rates.Select(r =>
         {
-            var m = new KesslerEvolution(nail) { SolarActivity = i.SolarActivity, LaunchRatePerYear = r, LaunchAltKm = i.LaunchAltKm, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear };
+            var m = new KesslerEvolution(nail) { SolarActivity = i.SolarActivity, LaunchRatePerYear = r, LaunchAltKm = i.LaunchAltKm, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear, WorkingSatellites = i.WorkingSatellites, DisposalSuccess = i.DisposalSuccess, RocketBodyDisposal = i.RocketBodyDisposal, AvoidanceSuccess = i.AvoidanceSuccess, SatelliteLifetimeYears = i.SatelliteLifetimeYears };
             m.SeedFromCatalog(cat);
             var rr = m.Run(i.HorizonYears, 10);
             return rr.TotalObjects[^1] / rr.TotalObjects[0];
@@ -176,7 +197,7 @@ public static class Scenarios
         IReadOnlyList<CatalogObject> cat, ScenarioInputs i, double satAreaM2)
     {
         var nail = MakeNail(i);
-        var m = new KesslerEvolution(nail) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear };
+        var m = new KesslerEvolution(nail) { SolarActivity = i.SolarActivity, LaunchRatePerYear = i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm, ResponsiveLaunch = i.Responsive, LossTolerancePerYear = i.LossTolerance, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear, WorkingSatellites = i.WorkingSatellites, DisposalSuccess = i.DisposalSuccess, RocketBodyDisposal = i.RocketBodyDisposal, AvoidanceSuccess = i.AvoidanceSuccess, SatelliteLifetimeYears = i.SatelliteLifetimeYears };
         m.SeedFromCatalog(cat);
         m.InjectBarrel(i.AltKm, i.NailCount);
 

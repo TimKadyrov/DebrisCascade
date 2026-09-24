@@ -10,6 +10,7 @@ public sealed class DebrisClass
     public double LcLoM, LcHiM, LcM;   // characteristic-length bin edges & representative [m]
     public double MassKg, AreaM2;
     public bool IsNail;
+    public bool IsWorking;   // a working satellite: holds altitude, dodges tracked objects, retires
     public double AreaToMass => AreaM2 / MassKg;
 }
 
@@ -26,6 +27,9 @@ public sealed class EvolutionResult
     public double[] TrackableObjects = [];
     /// <summary>Objects ≥10 cm in the belt (default 700–1100 km) — where a cascade can persist.</summary>
     public double[] BeltTrackableObjects = [];
+    /// <summary>Working satellites across LEO (<see cref="KesslerEvolution.WorkingSatellites"/> runs only). They are
+    /// not debris, so the other series leave them out.</summary>
+    public double[] WorkingSatellites = [];
 }
 
 /// <summary>
@@ -106,6 +110,37 @@ public sealed class KesslerEvolution
     /// <summary>Objects removed so far in this model's run.</summary>
     public double RemovalsTotal { get; private set; }
 
+    /// <summary>
+    /// Working satellites. Off by default, which keeps every derelict-only run unchanged: there, launched
+    /// and catalogued satellites are passive from day one. When on, catalogued satellites on the active
+    /// list and new launches enter a separate working class that
+    /// <list type="bullet">
+    /// <item>holds its altitude (no drag) for about <see cref="SatelliteLifetimeYears"/>, then is deorbited
+    /// with probability <see cref="DisposalSuccess"/> or left dead in place;</item>
+    /// <item>dodges tracked (≥10 cm) objects — its collision rate with them is cut by
+    /// <see cref="ManoeuvrableFraction"/> × <see cref="AvoidanceSuccess"/> — but can't dodge untracked
+    /// 1–10 cm debris or nails;</item>
+    /// <item>is left dead by any non-catastrophic hit (a mission kill), since then it can't deorbit.</item>
+    /// </list>
+    /// Launched rocket bodies are disposed of with probability <see cref="RocketBodyDisposal"/>.
+    /// Defaults are the evidence-based baseline: 90% disposal (the NASA/FCC/IADC benchmark), 80% for rocket
+    /// bodies (ESA 2025, observed), 90% avoidance, 89% of satellites manoeuvrable (McDowell, Sep 2026),
+    /// 5-year life (FCC 5-year rule, Starlink practice).
+    /// </summary>
+    public bool WorkingSatellites { get; init; } = false;
+    public double SatelliteLifetimeYears { get; init; } = 5.0;
+    public double DisposalSuccess { get; init; } = 0.90;
+    public double RocketBodyDisposal { get; init; } = 0.80;
+    public double AvoidanceSuccess { get; init; } = 0.90;
+    public double ManoeuvrableFraction { get; init; } = 0.89;
+    /// <summary>Working satellites deorbited at end of life, and those left dead because disposal failed.</summary>
+    public double DisposedTotal { get; private set; }
+    public double FailedDisposalTotal { get; private set; }
+    /// <summary>Working satellites left dead by a non-catastrophic hit.</summary>
+    public double MissionKillsTotal { get; private set; }
+    /// <summary>Collisions of working satellites with tracked objects that avoidance prevented.</summary>
+    public double AvoidedTotal { get; private set; }
+
     /// <summary>Altitude band [km] reported as the "belt" (<see cref="EvolutionResult.BeltTrackableObjects"/>).</summary>
     public double BeltLoKm { get; init; } = 700;
     public double BeltHiKm { get; init; } = 1100;
@@ -122,7 +157,9 @@ public sealed class KesslerEvolution
     /// </summary>
     public const int IntactClassStart = 4;
     public int NailClass => SizeClassCount;            // appended class index
-    private readonly int _nc;                          // total classes incl. nails
+    /// <summary>Working satellites (<see cref="WorkingSatellites"/>): same size and mass as the ~180 kg intact class.</summary>
+    public int WorkingClass => SizeClassCount + 1;
+    private readonly int _nc;                          // total classes incl. nails and working satellites
 
     private readonly int _nShell;
     private readonly double _minAlt, _binKm;
@@ -143,7 +180,7 @@ public sealed class KesslerEvolution
             _volM3[s] = 4.0 / 3.0 * Math.PI * (rHi * rHi * rHi - rLo * rLo * rLo);
         }
 
-        _nc = SizeClassCount + 1;
+        _nc = SizeClassCount + 2;
         _cls = new DebrisClass[_nc];
         for (int c = 0; c < SizeClassCount; c++)
         {
@@ -155,6 +192,11 @@ public sealed class KesslerEvolution
         {
             LcLoM = 0, LcHiM = 0, LcM = nail.CharacteristicLengthM,
             MassKg = nail.MassKg, AreaM2 = nail.MeanCrossSectionM2, IsNail = true,
+        };
+        var sat = _cls[IntactClassStart];
+        _cls[WorkingClass] = new DebrisClass
+        {
+            LcLoM = sat.LcLoM, LcHiM = sat.LcHiM, LcM = sat.LcM, MassKg = sat.MassKg, AreaM2 = sat.AreaM2, IsWorking = true,
         };
         _n = new double[_nShell, _nc];
     }
@@ -199,7 +241,7 @@ public sealed class KesslerEvolution
         {
             int s = ShellOf(o.Elements.SemiMajorAxis - Constants.EarthRadiusKm);
             if (s < 0) continue;
-            _n[s, NearestSizeClass(o.MassKg)] += 1.0;
+            _n[s, WorkingSatellites && o.IsActive ? WorkingClass : NearestSizeClass(o.MassKg)] += 1.0;
         }
         SeedBackground(backgroundSmallTotal, backgroundLargeTotal);
     }
@@ -327,6 +369,17 @@ public sealed class KesslerEvolution
                     double events = pairRate * dtSec;
                     if (events <= 0) continue;
 
+                    // A working satellite dodges a tracked partner; untracked debris and nails still hit it.
+                    if (_cls[j].IsWorking || _cls[k].IsWorking)
+                    {
+                        int other = _cls[j].IsWorking ? k : j;
+                        if (IsTracked(other))
+                        {
+                            double f = ManoeuvrableFraction * AvoidanceSuccess;
+                            AvoidedTotal += events * f; events *= 1.0 - f;
+                        }
+                    }
+
                     double mj = _cls[j].MassKg, mk = _cls[k].MassKg;
                     double mt = Math.Max(mj, mk), mp = Math.Min(mj, mk);
                     int projClass = mj <= mk ? j : k;
@@ -345,6 +398,15 @@ public sealed class KesslerEvolution
                         events = Math.Min(events, _n[s, projClass]);
                         if (events <= 0) continue;
                         dN[s, projClass] -= events;
+
+                        // A working satellite that survives the hit is still dead (mission kill): it can no
+                        // longer manoeuvre or deorbit, so it joins the intact derelicts.
+                        int target = projClass == j ? k : j;
+                        if (_cls[target].IsWorking && target != projClass)
+                        {
+                            double kill = Math.Min(events, Math.Max(0.0, _n[s, target] + dN[s, target]));
+                            dN[s, target] -= kill; dN[s, IntactClassStart] += kill; MissionKillsTotal += kill;
+                        }
                     }
 
                     if (!cat && _cls[projClass].LcM < CrateringEjectaMinLcM) continue;
@@ -369,9 +431,36 @@ public sealed class KesslerEvolution
             }
 
         DragMigrate(dtSec);
+        ApplyRetirement(dtSec);
         ApplyLaunch(dtSec);
         ApplyRemoval(dtSec);
         return catastrophic;
+    }
+
+    /// <summary>Tracked (≥10 cm, catalogued) classes: the ones a working satellite can see coming and dodge.</summary>
+    private bool IsTracked(int c) => _cls[c].IsWorking || (!_cls[c].IsNail && _cls[c].LcLoM >= 0.1 - 1e-12);
+
+    /// <summary>
+    /// End of life: working satellites retire at 1/<see cref="SatelliteLifetimeYears"/> per year; a share
+    /// <see cref="DisposalSuccess"/> is deorbited (leaves LEO), the rest are left dead in place.
+    /// </summary>
+    private void ApplyRetirement(double dtSec)
+    {
+        if (!WorkingSatellites || SatelliteLifetimeYears <= 0) return;
+        double f = 1.0 - Math.Exp(-dtSec / (SatelliteLifetimeYears * 365.25 * Constants.SecondsPerDay));
+        for (int s = 0; s < _nShell; s++)
+        {
+            double retire = _n[s, WorkingClass] * f; if (retire <= 0) continue;
+            _n[s, WorkingClass] -= retire;
+            double dead = retire * (1.0 - DisposalSuccess);
+            _n[s, IntactClassStart] += dead;
+            DisposedTotal += retire - dead; FailedDisposalTotal += dead;
+        }
+    }
+
+    public double TotalWorking()
+    {
+        double t = 0; for (int s = 0; s < _nShell; s++) t += _n[s, WorkingClass]; return t;
     }
 
     /// <summary>
@@ -425,6 +514,12 @@ public sealed class KesslerEvolution
         _lastThrottle = throttle;
 
         double add = LaunchRatePerYear * throttle * dtSec / (365.25 * Constants.SecondsPerDay);
+        if (WorkingSatellites)
+        {
+            _n[s, WorkingClass] += 0.85 * add;                   // working satellites
+            _n[s, 5] += 0.15 * add * (1.0 - RocketBodyDisposal); // rocket bodies left behind
+            return;
+        }
         _n[s, 4] += 0.85 * add;  // ~180 kg intacts (payloads / debris)
         _n[s, 5] += 0.15 * add;  // ~2.4 t rocket bodies
     }
@@ -511,6 +606,7 @@ public sealed class KesslerEvolution
             double a = Constants.EarthRadiusKm + _midAlt[s];
             for (int c = 0; c < _nc; c++)
             {
+                if (_cls[c].IsWorking) continue;   // station-keeping: working satellites hold their altitude
                 double pop = _n[s, c]; if (pop <= 0) continue;
                 double rateKmDay = -AtmosphericDrag.SemiMajorAxisDecayRateKmPerSec(a, _cls[c].AreaToMass, SolarActivity) * 86400.0;
                 if (rateKmDay <= 1e-9) continue;
@@ -526,10 +622,10 @@ public sealed class KesslerEvolution
     public EvolutionResult Run(double horizonYears = 50, double dtDays = 10)
     {
         var years = new List<double>(); var tot = new List<double>(); var trk = new List<double>(); var belt = new List<double>();
-        var catPy = new List<double>(); var nails = new List<double>(); var lf = new List<double>();
+        var catPy = new List<double>(); var nails = new List<double>(); var lf = new List<double>(); var work = new List<double>();
 
         double catAccum = 0, nextYear = 0; double t = 0, doneDays = 0, totalDays = horizonYears * 365.25;
-        years.Add(0); tot.Add(TotalDebris()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); catPy.Add(0); nails.Add(TotalNails()); lf.Add(_lastThrottle);
+        years.Add(0); tot.Add(TotalDebris()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); catPy.Add(0); nails.Add(TotalNails()); lf.Add(_lastThrottle); work.Add(TotalWorking());
 
         // Last step is shortened so the run ends exactly on the horizon (and records its final year).
         while (doneDays < totalDays - 1e-9)
@@ -540,7 +636,7 @@ public sealed class KesslerEvolution
             if (t >= nextYear + 1 - 1e-9)
             {
                 nextYear += 1;
-                years.Add(t); tot.Add(TotalDebris()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); catPy.Add(catAccum); nails.Add(TotalNails()); lf.Add(_lastThrottle);
+                years.Add(t); tot.Add(TotalDebris()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); catPy.Add(catAccum); nails.Add(TotalNails()); lf.Add(_lastThrottle); work.Add(TotalWorking());
                 catAccum = 0;
             }
         }
@@ -548,7 +644,7 @@ public sealed class KesslerEvolution
         {
             Years = years.ToArray(), TotalObjects = tot.ToArray(),
             CatastrophicPerYear = catPy.ToArray(), SurvivingNails = nails.ToArray(),
-            LaunchFraction = lf.ToArray(), TrackableObjects = trk.ToArray(), BeltTrackableObjects = belt.ToArray(),
+            LaunchFraction = lf.ToArray(), TrackableObjects = trk.ToArray(), BeltTrackableObjects = belt.ToArray(), WorkingSatellites = work.ToArray(),
         };
     }
 }

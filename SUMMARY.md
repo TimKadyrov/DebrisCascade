@@ -94,6 +94,28 @@ still doubles afterwards. The decision that governs LEO's long-term survival is 
 placed into the high, un-cleaned bands and how little of it is removed. Against that, a barrel
 of nails is a rounding error.
 
+## What if satellites work and deorbit
+
+Every traffic number above treats each added object as dead from day one: a stress test of
+disposal failure. With working satellites instead, each one works for 5 years, holding its orbit
+and dodging tracked (≥10 cm) objects, and is then deorbited. The same 500 a year at 900 km then
+grows the belt's ≥10 cm debris **×4.3 instead of ×87** under today's practice:
+
+- 90% of satellites deorbited at end of life (the NASA/FCC/IADC benchmark; SpaceX reports over 99%)
+- 80% of rocket bodies disposed of (ESA Space Environment Report 2025)
+- 90% of conjunctions with tracked objects avoided, by the 89% of satellites that can manoeuvre
+  (McDowell, Sep 2026). Nothing dodges the 1–10 cm field, and a hit there leaves a dead satellite.
+
+| Added a year at 900 km | Never deorbited | Poor (70/50/50) | Today's practice (90/80/90) | Best (99/95/99) |
+|---|---|---|---|---|
+| 50 | ×2.8 | ×1.8 | ×1.45 | ×1.3 |
+| 500 | ×87 | ×17.5 | ×4.3 | ×1.7 |
+
+(Belt debris ≥10 cm after 50 years over today's 8,270 belt objects; ×1.36 with nothing added.)
+Disposal is the lever: at 500 a year, disposal alone gives ×5.9, avoidance alone ×78, because
+what feeds the cascade is dead satellites left behind, and avoidance can't prevent those. The cube
+engine agrees: ×3.8 at 500 a year (8 seeds, range ×2.1–6.0) and ×1.1 at 50 a year.
+
 ## What holds it flat
 
 Removal and passivation. Taking the riskiest large dead objects out of orbit each year (the heaviest,
@@ -111,9 +133,11 @@ The belt is not doomed; it is a maintenance problem whose size is set by launch 
   none, ×1.36 at the assumed ~4 a year, ×2.1 if all were large stage blasts). Whether small
   fragments' cratering impacts throw off new debris changes the 1–10 cm results 2–3×, but barely
   moves the ≥10 cm belt. Both are reported.
-- **Not modelled.** Degradation debris (paint flakes, insulation), station-keeping and collision
-  avoidance (beyond constellation formation-keeping), end-of-life disposal of the injected
-  satellites and rocket bodies, the solar cycle. The modelled 1–10 cm field still thins over
+- **Disposal reliability** sets the traffic outcome: at 500 a year the belt grows ×1.7 (99% of
+  satellites deorbited) to ×17.5 (70%). See "What if satellites work and deorbit".
+- **Not modelled.** Degradation debris (paint flakes, insulation) and the solar cycle. Working
+  satellites that dodge and deorbit appear only in the section above; every other traffic result
+  treats each added object as dead from day one. The modelled 1–10 cm field still thins over
   the horizon, which is why the ≥10 cm population, not the raw total, is the headline metric.
 - **Checked against NASA.** The model agrees in direction with NASA's LEGEND model. With no new
   launches, LEO keeps growing (Liou & Johnson 2006, *Science*: roughly flat for 50 years, then
