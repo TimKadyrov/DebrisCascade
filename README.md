@@ -9,22 +9,22 @@ numbers instead of intuition.
 nuisance at high altitude, but it does **not** trigger Kessler syndrome or render LEO
 unusable. LEO's debris belt (700–1,100 km) *already grows slowly on its own*; whether it runs
 away is governed by **launch and removal policy**, against which a barrel of nails is a
-rounding error (no number of barrels doubles the belt's ≥10 cm population in 50 years; ~10
+rounding error (1,000 barrels add ~25% to the belt's ≥10 cm population in 50 years; ~9
 removals a year hold it flat). Disposal reliability is the lever: 500 satellites and rocket bodies
-a year left dead at 900 km grow the belt ×59 in 50 years, but with working satellites deorbited at
-today's 90% rate, the same traffic grows it only ×4.6. Rerun from NASA's own 2006 starting point,
-the cube engine reproduces LEGEND's 200-year benchmark: 11.5 catastrophic collisions (LEGEND 10.8).
+a year left dead at 900 km grow the belt ×60 in 50 years, but with working satellites deorbited at
+today's 90% rate, the same traffic grows it only ×4.8. Rerun from NASA's own 2006 starting point,
+the cube engine comes close to LEGEND's 200-year collision count: 12.8 catastrophic collisions (LEGEND 10.8).
 
 See **[SUMMARY.md](SUMMARY.md)** for a plain-language write-up, including the altitude analysis.
 
 ## Pipeline
 
 ```
-CelesTrak TLEs → CUDA J2 propagation → collision flux (spatial density)
-                                     → NASA Standard Breakup Model
-                                     → box-model Kessler evolution (source–sink ODE)
-                                     → discrete super-particle cascade
-                                     → conjunction cascade (Cube method, real geometry)
+Space-Track catalog → CUDA J2 propagation → collision flux (spatial density)
+                                          → NASA Standard Breakup Model
+                                          → box-model Kessler evolution (source–sink ODE)
+                                          → discrete super-particle cascade
+                                          → conjunction cascade (Cube method, real geometry)
 ```
 
 ## Projects
@@ -39,6 +39,11 @@ CelesTrak TLEs → CUDA J2 propagation → collision flux (spatial density)
 | `DebrisCascade.Tests` | 58 physics/GPU validation tests |
 
 ## Build & run
+
+Requirements: Windows (the WPF tool and the Credential Manager lookup are Windows-only), the
+.NET 10 SDK, and for the GPU engine the CUDA toolkit (12.x) with MSVC. `build.bat` targets an
+RTX 50-series GPU (`-arch=sm_120`) and a Visual Studio 18 install path; change both for other
+setups. Without the CUDA DLL every engine still runs, on the CPU (the cube engine much slower).
 
 ```bash
 # Build the CUDA engine (needs the CUDA toolkit + MSVC; RTX-class GPU)
@@ -119,8 +124,9 @@ default inputs and exits.
 ## Key assumptions & caveats
 
 - Nail: 75 × 3 mm carbon steel ≈ 4.16 g; catastrophic threshold 40 J/g (NASA SBM).
-- Debris altitude profile is a stylized ORDEM/MASTER-like distribution (peak ~850 km);
-  seeding it correctly is essential — tying it to the payload catalog understates Kessler.
+- The modelled 1–10 cm field follows a stylized ORDEM/MASTER-like altitude profile (peak ~850 km).
+  With the full Space-Track catalog, objects ≥10 cm are all real; a modelled large-object belt is
+  only added when the catalog lacks catalogued debris (`--active-only`).
 - Catalog: with Space-Track credentials, every object on orbit (payloads, rocket bodies,
   catalogued debris — ~29,800 in LEO); otherwise CelesTrak's active satellites plus a modelled
   large-object belt. A modelled ~1M-object 1–10 cm field is added either way.
@@ -151,14 +157,37 @@ default inputs and exits.
   seed range; the barrel, ASAT and comparison figures, usability and the low-altitude event use
   the deterministic box model, because those effects are smaller than the cube's seed scatter.
 - NASA benchmark (`--benchmark-2006 --cube-seeds 16`): the 1 Jan 2006 catalog, no launches or
-  explosions, 200 years, ≥10 cm only. Cube engine 11.5 catastrophic collisions (5–17), ~45% at
-  900–1,000 km, +10% in LEO at 50 years; box model 9.9 and +15%; LEGEND 10.8, ~60%, flat.
+  explosions, 200 years, ≥10 cm only. Cube engine 12.8 catastrophic collisions (7–18), ~46% at
+  900–1,000 km, +13% in LEO at 50 years; box model 9.9 and +15%; LEGEND 10.8, ~60%, flat.
   Intact objects use catalog-true mass classes, and eccentric orbits count only their time in LEO.
 - Box model uses a well-mixed shell assumption at 10 km/s. The conjunction Cube method uses real
-  orbit geometry; `--calibrate` compares the two on the production population and they agree
-  within ~5% (all collisions 1.01×, catastrophic 0.96× at 10,000 snapshots). The cube engine
+  orbit geometry; `--calibrate` compares the two collision rates on the production population
+  (not re-run since the 2026-09 model changes; the 2006 benchmark above is the current check). The cube engine
   skips encounters between catalogued payloads flying in formation (planes within 1°, semi-major
   axes within 20 km: constellation neighbours), which it would otherwise count as ~26 phantom
   collisions a year; `--calibrate-comoving` shows what those pairs are and `--calibrate-speed`
   breaks the rate down by encounter speed. The discrete and cube engines are stochastic: quote
   seed ensembles, not single runs.
+
+## Data sources and terms
+
+- The full on-orbit catalog, SATCAT radar cross-sections and the 2006 historical catalog come from
+  [Space-Track.org](https://www.space-track.org). You need your own free account; the tool reads it
+  from `SPACETRACK_USER` / `SPACETRACK_PASS` or a generic Windows credential named `SPACETRACK`, and
+  never stores or logs the password. Space-Track's user agreement does not allow redistributing its
+  data, so the downloaded catalogs are cached locally under `data/` and are not part of this
+  repository. Only model outputs are committed.
+- Without a Space-Track account the tool falls back to [CelesTrak](https://celestrak.org)
+  (`--active-only`).
+- The papers the model is built on and checked against are listed, with links, in
+  [docs/REFERENCES.md](docs/REFERENCES.md).
+
+## License
+
+[MIT](LICENSE). This covers the code, the presentation, the charts and the data outputs.
+
+## Citing
+
+If you use the model or its results, please cite the repository:
+
+> Kad, T. (2026). *DebrisCascade: a barrel-of-nails LEO debris model.* GitHub repository.

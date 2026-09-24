@@ -13,6 +13,9 @@ data/*.tle
 data/satcat.csv
 data/spacetrack_satcat.csv
 
+# Source papers: copyrighted, not redistributed (links in docs/REFERENCES.md)
+docs/*.pdf
+
 # Generated visualization builds (concatenated from parts + data)
 viz/index.html
 viz/charts.html
