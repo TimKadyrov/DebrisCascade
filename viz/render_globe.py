@@ -89,10 +89,10 @@ for k, (day, label) in enumerate(frames, 1):
     ax.set_box_aspect((1,1,1)); ax.set_axis_off(); ax.view_init(elev=22, azim=35 + k*8)
     frac = alive.mean()
     ax.text2D(0.04, 0.95, f"NAIL CLOUD ORBITAL DECAY", transform=ax.transAxes, color="#4da6ff",
-              fontsize=13, family="monospace", weight="bold")
-    ax.text2D(0.04, 0.90, f"Day {day} · {label}", transform=ax.transAxes, color="#e7eef8", fontsize=15)
-    ax.text2D(0.04, 0.055, f"{frac*100:.0f}% of nails still on orbit · {M['altKm']:.0f} km release",
-              transform=ax.transAxes, color="#9fb2cc", fontsize=11, family="monospace")
+              fontsize=26, family="monospace", weight="bold")
+    ax.text2D(0.04, 0.88, f"Day {day} · {label}", transform=ax.transAxes, color="#e7eef8", fontsize=28, weight="bold")
+    ax.text2D(0.04, 0.055, f"{frac*100:.0f}% of nails still up",
+              transform=ax.transAxes, color="#9fb2cc", fontsize=20, family="monospace")
     out = os.path.join(HERE, "frames", f"frame{k}.png")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     fig.savefig(out, dpi=130, facecolor="#06080e", bbox_inches="tight", pad_inches=0.2)

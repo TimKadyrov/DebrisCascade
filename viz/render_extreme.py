@@ -57,10 +57,10 @@ for k, fr in enumerate(frames, 1):
     ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim); ax.set_zlim(-lim, lim)
     ax.set_box_aspect((1,1,1)); ax.set_axis_off(); ax.view_init(elev=20, azim=40)
     ax.text2D(0.04, 0.95, "LEO DEBRIS BELT · 700–1,100 km", transform=ax.transAxes,
-              color="#4da6ff", fontsize=13, family="monospace", weight="bold")
-    ax.text2D(0.04, 0.90, fr["label"], transform=ax.transAxes,
-              color=("#FF5A52" if k == 2 else "#e7eef8"), fontsize=16, weight="bold")
-    ax.text2D(0.04, 0.055, fr["sub"], transform=ax.transAxes, color="#9fb2cc", fontsize=11, family="monospace")
+              color="#4da6ff", fontsize=24, family="monospace", weight="bold")
+    ax.text2D(0.04, 0.88, fr["label"], transform=ax.transAxes,
+              color=("#FF5A52" if k == 2 else "#e7eef8"), fontsize=28, weight="bold")
+    ax.text2D(0.04, 0.055, fr["sub"], transform=ax.transAxes, color="#9fb2cc", fontsize=20, family="monospace")
     out = os.path.join(HERE, "frames", f"{fr['name']}.png")
     fig.savefig(out, dpi=130, facecolor="#06080e", bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)

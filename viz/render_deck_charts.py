@@ -27,6 +27,11 @@ def fig(w, h, rect):
     return f, ax
 
 
+def tag(f, text):
+    """Small source line in the card's bottom-right corner: which engine and scenario drew it."""
+    f.text(0.995, 0.012, text, ha="right", va="bottom", fontsize=7.5, color=MUTE, style="italic")
+
+
 def save(f, name):
     p = os.path.join(OUT, name); f.savefig(p, dpi=200, facecolor="white"); plt.close(f); print("saved", p)
 
@@ -57,15 +62,14 @@ ax.text(900, ax.get_ylim()[1] * 0.97, "700–1,100 km belt", color=RED, fontsize
 ax2 = ax.twinx()
 for sp in ("top",): ax2.spines[sp].set_visible(False)
 ax2.spines["right"].set_color(ORANGE)
-ax2.plot(alt, fl, color=ORANGE, lw=2.4); ax2.plot(alt, il, color=ORANGE, lw=1.5, ls=(0, (4, 3)))
+ax2.plot(alt, fl, color=ORANGE, lw=2.4)
 ax2.set_yscale("log"); ax2.set_ylim(0.05, 3e4)
 ax2.yaxis.set_major_formatter(FuncFormatter(lambda v, _: {0.1: "0.1", 1: "1", 10: "10", 100: "100", 1000: "1k", 10000: ">10k"}.get(v, "")))
 ax2.tick_params(axis="y", colors=ORANGE, labelsize=9)
-ax2.set_ylabel("years until drag removes it (log)", fontsize=9.5, color=ORANGE)
+ax2.set_ylabel("years for drag to remove a 3–10 cm fragment (log)", fontsize=9, color=ORANGE)
 i1 = int(np.argmin(abs(alt - 1275)))
 ax2.text(alt[i1], fl[i1] * 1.6, "3–10 cm fragment", color=ORANGE, fontsize=9, ha="right", weight="bold")
-i2 = int(np.argmin(abs(alt - 825)))
-ax2.text(alt[i2] - 15, il[i2] * 2.2, "intact satellite", color=ORANGE, fontsize=9, ha="right")
+tag(f, "box model · today's catalog · drag lifetimes")
 save(f, "deck_altitude.png")
 
 # --- Slide 14: belt growth vs launch rate ------------------------------------------------
@@ -85,6 +89,7 @@ for r, dx, dy in [(0, 90, 1.06), (50, 45, 0.8), (200, 25, 0.75), (500, 25, 0.75)
     ax.annotate(label, (r, g), xytext=(r + dx, g * dy), fontsize=9.5, color=RED, weight="bold",
                 ha="right" if dx < 0 else "left", arrowprops=dict(arrowstyle="-", color=RED, lw=0.7))
 ax.text(990, 1.06, "×1 = no growth", color=MUTE, fontsize=8.5, ha="right", va="bottom")
+tag(f, "box model · 50 years · launches at 900 km")
 save(f, "deck_tipping.png")
 
 # --- Slide 15: constant vs responsive launch at 500/yr -----------------------------------
@@ -102,6 +107,7 @@ ax.text(q + 0.6, ax.get_ylim()[0] * 1.15, f"operators stop launching (yr {q:.0f}
 ax.text(49.5, r5["constantBelt"][-1] * 0.8, f"×{r5['constantBelt'][-1] / r5['constantBelt'][0]:.0f}", color=RED, fontsize=11, weight="bold", ha="right", va="top")
 ax.text(49.5, r5["responsiveBelt"][-1] * 0.62, f"still ×{r5['growthAfterQuitBelt']:.1f} after they quit", color=BLUE, fontsize=10, weight="bold", ha="right", va="top")
 ax.legend(loc="upper left", fontsize=9, frameon=False)
+tag(f, "box model · 500 launches/yr at 900 km")
 save(f, "deck_responsive.png")
 
 # --- Slide 17: the extreme case — belt under 500 launches/yr ------------------------------
@@ -113,6 +119,7 @@ ax.yaxis.set_major_formatter(FuncFormatter(kfmt)); ax.tick_params(labelsize=8)
 ax.set_xlabel("years", fontsize=8.5); ax.set_ylabel("belt objects ≥10 cm", fontsize=8)
 ax.text(1, cb[0] * 1.9, f"{kfmt(cb[0])} today", fontsize=8, color=INK, va="bottom")
 ax.text(49, cb[-1] * 0.7, kfmt(cb[-1]), fontsize=9, color=RED, weight="bold", ha="right", va="top")
+tag(f, "box model · 500 launches/yr at 900 km")
 save(f, "deck_extreme.png")
 
 # --- Slide 19: extra risk from a big low-altitude breakup ---------------------------------
@@ -124,6 +131,7 @@ ax.set_xticks([0, 6, 12, 24, 36]); ax.tick_params(labelsize=8)
 ax.set_xlabel("months after the breakup", fontsize=8.5); ax.set_ylabel("extra risk (%/yr)", fontsize=8)
 rel = ex[0] / (L["baselineHazard"][0] * 100) * 100   # ex is already in %/yr
 ax.text(1, ex[0] * 1.02, f"+{ex[0]:.3f}%/yr (+{rel:.0f}%)", fontsize=8.5, color=GREEN, weight="bold", va="bottom")
+tag(f, "box model · 2.2 t breakup at 480 km")
 save(f, "deck_lowevent.png")
 
 # --- Removal slide: belt growth vs removals/yr ---------------------------------------------
@@ -143,4 +151,5 @@ for x, y, c, lab, dy in [(R["toHoldFlatNoLaunches"], 1, GREEN, f"~{R['toHoldFlat
                 arrowprops=dict(arrowstyle="-", color=c, lw=0.7))
 ax.text(99, 1.04, "×1 = held flat", color=MUTE, fontsize=8.5, ha="right", va="bottom")
 ax.legend(loc="upper right", fontsize=9, frameon=False)
+tag(f, "box model · 50 years · removals from year 0")
 save(f, "deck_removal.png")
