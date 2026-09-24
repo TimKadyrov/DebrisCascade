@@ -190,4 +190,5 @@ default inputs and exits.
 
 If you use the model or its results, please cite the repository:
 
-> Kad, T. (2026). *DebrisCascade: a barrel-of-nails LEO debris model.* GitHub repository.
+> TimKadyrov. (2026). *DebrisCascade: a barrel-of-nails LEO debris model.* GitHub repository.
+> https://github.com/TimKadyrov/DebrisCascade
