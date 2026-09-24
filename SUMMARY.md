@@ -2,70 +2,81 @@
 
 *Can a launched "barrel of nails" render low-Earth orbit unusable via Kessler syndrome?*
 
+Every number below comes from one scripted run (`SpaceWars.Cli --deck` → `data/deck_numbers.json`)
+on the live Space-Track catalog. Growth figures are over 50 years.
+
 ## The study
 
-We set out to answer, quantitatively rather than rhetorically, whether launching a "barrel
-of nails" into low-Earth orbit could render LEO unusable through Kessler syndrome. To do it
-we built a full modeling chain grounded in real data: the live satellite catalog from
-CelesTrak, per-object masses and cross-sections derived from Space-Track's radar-cross-section
-records (100% coverage of the LEO set), GPU-accelerated J2 orbit propagation on an RTX 5090,
-the NASA Standard Breakup Model for fragmentation, and three independent cascade engines of
-increasing fidelity — an aggregate source–sink ODE, a discrete super-particle Monte Carlo, and
-a conjunction "cube" model that resolves collisions by real orbit-crossing geometry. We added
-ongoing launch traffic and an economically-rational "operators retreat" feedback so the
-environment could behave like the real one.
+We set out to answer, quantitatively rather than rhetorically, whether launching a "barrel of
+nails" into low-Earth orbit could render LEO unusable through Kessler syndrome. The modeling
+chain is grounded in real data. It uses every object currently on orbit from Space-Track: 28,676
+in LEO, comprising 16,402 payloads, 9,911 catalogued debris pieces, 1,552 rocket bodies and 811
+unidentified objects, 99% with radar cross-sections. Those cross-sections give per-object masses and
+areas. Orbits are propagated with GPU-accelerated J2 on an RTX 5090. Fragmentation follows the
+NASA Standard Breakup Model, including its own area-to-mass ratios for fragments. Three
+independent cascade engines of increasing fidelity run the evolution: an aggregate source–sink
+ODE, a discrete super-particle Monte Carlo, and a conjunction "cube" model that resolves
+collisions by real orbit-crossing geometry. We added ongoing launch traffic and an
+economically-rational "operators retreat" feedback. The headline metric is the standard one for
+Kessler studies: the population of objects **≥10 cm**, reported both for all of LEO and for the
+700–1,100 km belt.
 
-The verdict is consistent across all three engines: **a barrel of nails is a genuine
-mission-kill weapon and a persistent nuisance, but it neither triggers Kessler nor ends LEO.**
-A single ~4 g nail is lethal to any satellite it strikes, yet at ~0.8 J/g it is far below the
-40 J/g needed to *shatter* a 260 kg satellite — you'd need a ~200 g bolt for that — so the
-barrel produces mission-kills and cratering debris, not the ~10⁴-fragment clouds that actually
-drive a cascade. Those come from large-on-large collisions, which the barrel can only
-*accelerate*, never *ignite*. To make nails themselves tip a band you'd need thousands of
-barrels — thousands of tonnes of steel, more than a year of humanity's entire launch mass —
-which is self-evidently absurd. The real Kessler risk is set by launch and removal policy,
-against which a barrel is a rounding error.
+The verdict: **a barrel of nails is a genuine mission-kill weapon, but it neither triggers
+Kessler nor ends LEO.** A single ~4 g nail is lethal to any satellite it strikes, yet at ~0.8 J/g
+it is far below the 40 J/g needed to *shatter* a 260 kg satellite; you'd need a ~200 g bolt for
+that. The ~10⁴-fragment clouds that drive a cascade come from large-on-large collisions:
+260 kg on 260 kg makes ~29,000 fragments ≥1 cm. Nails instead flood the lethal-but-untrackable
+1–10 cm field. Dumped at 900 km, ~90–220 barrels double that field within 50 years (the range
+brackets how much debris small impacts throw off: the breakup model as written vs NASA's LEGEND
+convention). But no number of barrels doubles the ≥10 cm belt: even 1,000 barrels add only
+~18%. One ASAT strike on a 1 t satellite at 865 km adds as many ≥10 cm objects as ~25 barrels.
 
 ## Altitude is the whole story
 
-LEO is not one place; it is strongly stratified by altitude, and almost every conclusion flips
-depending on where the barrel goes. **Below ~600 km** — the Starlink shell at 550 km, for
-instance — atmospheric drag is a free janitor: a nail's orbital lifetime there is only about
-1.2 years (as little as 4 months at solar maximum), so a barrel dumped low is a purely
-*transient* threat that self-cleans within a couple of years and leaves essentially no lasting
-trace. **At 800–1000 km — the "bad neighborhood"** — drag is feeble and lifetimes stretch to
-decades and centuries. This is where the real debris belt actually lives (the Fengyun-1C,
-Cosmos–Iridium, and Cosmos-1408 fragment clouds, plus decades of abandoned rocket bodies), and
-our corrected model shows this band sitting *already marginally supercritical* at today's
-population: it creeps upward on its own, with no new launches at all. A barrel placed here
-persists for decades and leaves a fingerprint roughly six to seven times larger than the same
-barrel at 550 km — and in a band that's already on the knife-edge, that extra mass gets
-*amplified* by the runaway rather than harmlessly decaying.
+LEO is strongly stratified by altitude, and almost every conclusion flips with it.
 
-## What the altitude view shows
+- **Below ~600 km, drag is a free janitor.** Fragments rain out in months to a few years and dead
+  satellites within about a decade. A barrel at 550 km loses half its nails in ~1.5 years. While
+  it lasts, though, it makes its shell the most dangerous in LEO: about 1.1% a year chance of a
+  lethal hit per satellite, ~5× normal.
+- **A big breakup low down is recoverable.** A 2.2 t breakup at 480 km (like Cosmos-1408) raises
+  local collision risk ~20%, and drag clears it within about a year.
+- **The 700–1,100 km belt is the "bad neighborhood".** Fragments there last decades to a century
+  and intact objects centuries. It is where the real debris belt lives (the Fengyun-1C,
+  Cosmos–Iridium and Cosmos-1408 clouds, Envisat, decades of rocket bodies). Today the
+  per-satellite risk peaks there at ~0.5% a year: the worst in LEO, but well below the ~2% a year
+  at which operators abandon a band, and satellites fly there now.
+- **The belt already grows on its own.** With no launches at all, its ≥10 cm population grows
+  ~13% over 50 years. All three engines agree on the direction (box ×1.13, discrete ×1.11,
+  cube ×1.25 as 8-seed means). This matches NASA's LEGEND finding that LEO debris keeps growing
+  even without new launches.
+- **Above ~1,000 km, debris is effectively permanent.** Even small fragments stay for centuries
+  to millennia. This is where OneWeb (~1,200 km) and several proposed mega-constellations
+  operate, so a low collision risk there *today* means "under-populated", not "safe".
 
-The "usability by altitude" analysis makes this concrete: the per-satellite annual collision
-probability peaks sharply at 800–1000 km, and that is the band that crosses the "orbit becomes
-unusable" threshold first — immediately when launch traffic is added, and progressively over
-the horizon even without it. A secondary persistent zone sits around 1200–1500 km, precisely
-where several proposed mega-constellations (OneWeb, and the planned Chinese systems near
-~1160 km) intend to operate, which is why that altitude choice matters far beyond any single
-malicious payload. The overarching lesson is that low LEO is largely self-healing while high
-LEO is nearly permanent, so risk — whether from a barrel of nails or from ordinary operations
-— scales dramatically with altitude, and the decision that governs LEO's long-term survival is
-not whether someone launches nails but *how much mass is placed into the high, un-cleaned bands
-and how little of it is ever removed.*
+## What actually tips LEO
 
-## An honest caveat
+Launch traffic into the belt, not any single object. Sustained launches into 900 km multiply the
+belt's ≥10 cm population ×2.5 at 50 a year, ×16 at 200 a year, and ×91 at 500 a year (with
+~1,600–1,700 catastrophic collisions a year by year 50). Rational operators don't save it. At 500
+launches a year they throttle back as the risk rises and stop entirely by year ~28, yet the belt
+still doubles afterwards. The decision that governs LEO's long-term survival is how much mass is
+placed into the high, un-cleaned bands and how little of it is removed. Against that, a barrel
+of nails is a rounding error.
 
-From our calibration: the well-mixed box model actually *under*counts collisions by a factor
-of several (it dilutes objects over the full sphere while real orbits concentrate in latitude
-bands), which means its near-critical result is conservative — the true environment is, if
-anything, somewhat more collisional than the headline numbers suggest. The conjunction model's
-geometry is faithful, but its absolute rate is qualitative pending finer particle resolution.
-Both engines bracket the real near-critical margin.
+## What the model can and can't say
+
+- **Main uncertainty.** Whether small fragments' cratering impacts throw off new debris changes
+  the 1–10 cm results 2–3×, but barely moves the ≥10 cm belt. Both conventions are reported.
+- **Not modelled.** Explosions and other non-collision debris sources, station-keeping and
+  collision avoidance, the solar cycle. The modelled 1–10 cm field (~1M objects) has no source
+  except collisions, which is why the ≥10 cm population, not the raw total, is the headline metric.
+- **Stochastic engines are noisy.** Single discrete or cube runs range ×0.8–×1.5 for the belt;
+  quote their 8-seed means.
+- **Scope.** Results are order-of-magnitude estimates from a stylised model, not operational
+  forecasts.
 
 ---
 
 *Generated from the SpaceWars model chain. See [README.md](README.md) for the code and how to
-reproduce these results.*
+reproduce these results (`dotnet run --project src/SpaceWars.Cli -- --deck`).*

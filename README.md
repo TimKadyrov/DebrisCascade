@@ -60,10 +60,12 @@ export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # credentials read 
 | `--conjunction` | tier-3 Cube-method cascade (real orbit-crossing geometry) |
 | `--launch <n/yr> --launch-alt <km>` | ongoing launch traffic (the Kessler driver) |
 | `--responsive [--loss-tol <frac>]` | economically rational launch (self-limiting) |
-| `--tipping` | critical launch-rate sweep |
+| `--tipping` | launch-rate sweep and break-even rate |
 | `--barrel-threshold` | how many barrels tip a band |
 | `--calibrate` | cube-method rate calibration (geometric vs well-mixed) |
 | `--charts` / `--export <file>` | write data for the visualizations |
+| `--deck` | every number the presentation quotes → `data/deck_numbers.json` (charts: `viz/render_deck_charts.py`) |
+| `--active-only` | use CelesTrak's active satellites instead of the full Space-Track on-orbit catalog |
 
 ## Visualizations
 
@@ -77,13 +79,17 @@ export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # credentials read 
 - Nail: 75 × 3 mm carbon steel ≈ 4.16 g; catastrophic threshold 40 J/g (NASA SBM).
 - Debris altitude profile is a stylized ORDEM/MASTER-like distribution (peak ~850 km);
   seeding it correctly is essential — tying it to the payload catalog understates Kessler.
-- Object masses/areas are class-representative (SATCAT/RCS refinement is future work).
+- Catalog: with Space-Track credentials, every object on orbit (payloads, rocket bodies,
+  catalogued debris — ~28,700 in LEO); otherwise CelesTrak's active satellites plus a modelled
+  large-object belt. A modelled ~1M-object 1–10 cm field is added either way.
 - Object masses/areas come from SATCAT: RCS as cross-section (CelesTrak numeric, or Space-Track
-  RCS_SIZE categories), mass from the NASA size↔mass law. CelesTrak's active feed is RCS-sparse
-  (~3% of the LEO set); Space-Track credentials give far fuller coverage.
+  RCS_SIZE categories). Payloads and rocket bodies get intact masses (bulk-density law);
+  debris and breakup fragments get the NASA breakup model's own area-to-mass ratios.
+- The headline metric is objects ≥10 cm (all LEO and the 700–1,100 km belt). The 1–10 cm field
+  has no source term except collisions (no explosions), so raw totals drain over time.
 - Box model uses a well-mixed shell assumption; the conjunction Cube method is geometrically
   faithful (real cross-shell crossings) BUT `--calibrate` shows its *absolute* rate is
   cube-size-dependent with super-particles (λ∝1/V_cube variance), so it is **not quotable** as
   implemented — use the box model for rates and the conjunction model for geometry. Converging
-  it needs near-unit-weight particles (~10⁶ objects, feasible on the GPU). Both bracket the real
-  near-critical margin.
+  it needs near-unit-weight particles (~10⁶ objects, feasible on the GPU). The discrete and cube
+  engines are stochastic: quote seed ensembles, not single runs.

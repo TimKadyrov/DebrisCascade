@@ -12,7 +12,7 @@ TWO_PI = 2 * math.pi
 
 def make_positions(N, seed):
     rng = np.random.default_rng(seed)
-    a = RE + rng.uniform(780, 1020, N)
+    a = RE + rng.uniform(700, 1100, N)
     e = np.abs(rng.normal(0, 0.004, N))
     inc = np.radians(rng.choice([82, 98.7, 65, 74, 51, 86], N, p=[.22,.28,.14,.14,.12,.10]) + rng.normal(0, 3, N))
     raan = rng.uniform(0, TWO_PI, N); argp = rng.uniform(0, TWO_PI, N); Marr = rng.uniform(0, TWO_PI, N)
@@ -31,11 +31,15 @@ def earth(ax):
     ax.plot_surface(ex, ez, ey, color="#0e2d4e", alpha=0.97, linewidth=0, shade=True, zorder=0)
     ax.plot_wireframe(ex, ez, ey, color="#2a4a6b", linewidth=0.3, alpha=0.3, rstride=6, cstride=6)
 
+# Growth factor from the model export (CLI --deck): belt objects >=10 cm after 50 yr at 500 launches/yr.
+import json
+_r = json.load(open(os.path.join(HERE, "..", "data", "deck_numbers.json"), encoding="utf-8"))["conventions"]["asWritten"]["responsive500"]
+_g = _r["constantBelt"][-1] / _r["constantBelt"][0]
 frames = [
     dict(name="extreme1", N=4000, seed=1, color="#7fa8d0", s=3.0, alpha=0.55, cmap=None,
-         label="Today", sub="~thousands of tracked objects"),
+         label="Today", sub=f"~{_r['constantBelt'][0]/1e3:.0f}k objects ≥10 cm in the belt"),
     dict(name="extreme2", N=60000, seed=2, color=None, s=1.3, alpha=0.35, cmap="autumn",
-         label="After runaway", sub="~65× debris — the belt is a shell"),
+         label="After 50 yr of 500 launches/yr", sub=f"~{_g:.0f}× objects ≥10 cm: the belt is a shell"),
 ]
 
 for k, fr in enumerate(frames, 1):
@@ -45,14 +49,14 @@ for k, fr in enumerate(frames, 1):
     earth(ax)
     if fr["cmap"]:
         rr = np.sqrt(x*x + y*y + z*z) - RE
-        ax.scatter(x, y, z, s=fr["s"], c=rr, cmap=fr["cmap"], vmin=780, vmax=1050,
+        ax.scatter(x, y, z, s=fr["s"], c=rr, cmap=fr["cmap"], vmin=700, vmax=1100,
                    alpha=fr["alpha"], depthshade=False, edgecolors="none")
     else:
         ax.scatter(x, y, z, s=fr["s"], c=fr["color"], alpha=fr["alpha"], depthshade=False, edgecolors="none")
     lim = 7900
     ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim); ax.set_zlim(-lim, lim)
     ax.set_box_aspect((1,1,1)); ax.set_axis_off(); ax.view_init(elev=20, azim=40)
-    ax.text2D(0.04, 0.95, "LEO DEBRIS BELT · 800–1000 km", transform=ax.transAxes,
+    ax.text2D(0.04, 0.95, "LEO DEBRIS BELT · 700–1,100 km", transform=ax.transAxes,
               color="#4da6ff", fontsize=13, family="monospace", weight="bold")
     ax.text2D(0.04, 0.90, fr["label"], transform=ax.transAxes,
               color=("#FF5A52" if k == 2 else "#e7eef8"), fontsize=16, weight="bold")
