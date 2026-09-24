@@ -1,14 +1,18 @@
 # DebrisCascade — Barrel-of-Nails LEO Debris Model
 
 > [!IMPORTANT]
-> **Purpose and responsible use.** This is a purely academic assessment: a thought experiment
-> answered with numbers, not a plan. It models how orbital debris evolves; it does not help anyone
-> put anything in orbit. Results are order-of-magnitude estimates from a simplified model, not
-> forecasts. Don't try this at home: putting debris in orbit on purpose endangers every satellite
-> up there, and it goes against the
+> **Purpose and responsible use.** This is a purely academic assessment: a valid concern for the
+> long-term use of outer space, answered with numbers. It models how orbital debris evolves; it
+> does not help anyone put anything in orbit. Results are order-of-magnitude estimates from a
+> simplified model, not forecasts. Don't try this at home: putting debris in orbit on purpose
+> endangers every satellite up there, and it goes against the
 > [UN space debris guidelines](https://www.unoosa.org/documents/pdf/spacelaw/sd/COPUOS-GuidelinesE.pdf)
-> that spacefaring nations have endorsed. Please don't extend the tool into planning or targeting,
-> such as optimising a release to maximise damage or aiming at specific satellites or operators.
+> that spacefaring nations have endorsed.
+>
+> **Conclusion.** With responsible policies in place, low-Earth orbit stays usable: satellites and
+> rocket bodies deorbited at the end of their life, which is the decisive lever, and the riskiest
+> large dead objects removed, about nine a year. Collision avoidance helps working satellites but
+> on its own barely slows the growth of debris.
 
 An academic risk assessment: *can a launched "barrel of nails" render low-Earth orbit
 unusable via Kessler syndrome?* The tool pulls the real satellite catalog, propagates it
