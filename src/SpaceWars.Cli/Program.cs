@@ -478,6 +478,16 @@ if (opts.Deck)
     Console.WriteLine($"   wrote {deckPath}\n");
 }
 
+// 4h''. Benchmark against NASA's LEGEND no-launch projection from the 1 Jan 2006 catalog.
+if (opts.Benchmark2006)
+{
+    Console.WriteLine("--- NASA benchmark: LEGEND no-launch projection from 1 Jan 2006 (data/benchmark_2006.json) ---");
+    var bench = await NasaBenchmark.ComputeAsync(dataDir, s => Console.WriteLine(s));
+    string benchPath = Path.Combine(dataDir, "benchmark_2006.json");
+    File.WriteAllText(benchPath, System.Text.Json.JsonSerializer.Serialize(bench, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    Console.WriteLine($"   wrote {benchPath}\n");
+}
+
 // 4i. Cube-method calibration: geometric (cube) vs well-mixed (kinetic) rate.
 if (opts.Calibrate)
 {
@@ -616,6 +626,7 @@ file sealed class CliOptions
     public bool ActiveOnly;
     public bool CalibrateSpeed;
     public bool CalibrateComoving;
+    public bool Benchmark2006;
 
     public static CliOptions Parse(string[] args)
     {
@@ -637,6 +648,7 @@ file sealed class CliOptions
             if (a == "--active-only") { o.ActiveOnly = true; continue; }
             if (a == "--calibrate-speed") { o.CalibrateSpeed = true; continue; }
             if (a == "--calibrate-comoving") { o.CalibrateComoving = true; continue; }
+            if (a == "--benchmark-2006") { o.Benchmark2006 = true; continue; }
             if (i + 1 >= args.Length) break; // remaining flags need a value
             switch (a)
             {

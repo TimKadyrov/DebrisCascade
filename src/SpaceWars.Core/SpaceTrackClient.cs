@@ -93,7 +93,31 @@ public sealed class SpaceTrackClient(string cacheDir)
         return Tle.LoadMany(reader);
     }
 
-    private static async Task<HttpClient> LoginAsync()
+    /// <summary>
+    /// The catalog as it stood at <paramref name="atUtc"/>: every object's latest element set from Space-Track's
+    /// history in the <paramref name="windowDays"/> before that date (LEO objects are updated daily, so a short
+    /// window catches them all). Cached permanently — history doesn't change — so it's pulled once.
+    /// </summary>
+    public async Task<List<Tle>> GetHistoricalCatalogAsync(DateTime atUtc, int windowDays = 14)
+    {
+        Directory.CreateDirectory(cacheDir);
+        string cachePath = Path.Combine(cacheDir, $"spacetrack_history_{atUtc:yyyyMMdd}.tle");
+        if (!File.Exists(cachePath))
+        {
+            string from = atUtc.AddDays(-windowDays).ToString("yyyy-MM-dd"), to = atUtc.ToString("yyyy-MM-dd");
+            string query = $"https://www.space-track.org/basicspacedata/query/class/gp_history/EPOCH/{from}--{to}/orderby/NORAD_CAT_ID,EPOCH/format/3le";
+            using var http = await LoginAsync(TimeSpan.FromMinutes(10));
+            string tle = await http.GetStringAsync(query);
+            if (tle.Length < 1000 || !tle.Contains("\n1 "))
+                throw new InvalidOperationException("Space-Track returned no historical element sets.");
+            await File.WriteAllTextAsync(cachePath, tle);
+        }
+        using var reader = new StreamReader(cachePath);
+        return Tle.LoadMany(reader).Where(t => t.EpochUtc <= atUtc)
+                  .GroupBy(t => t.NoradId).Select(g => g.OrderBy(t => t.EpochUtc).Last()).ToList();
+    }
+
+    private static async Task<HttpClient> LoginAsync(TimeSpan? timeout = null)
     {
         var creds = GetCredentials();
         if (creds is null)
@@ -103,7 +127,7 @@ public sealed class SpaceTrackClient(string cacheDir)
             throw new InvalidOperationException("Space-Track username missing (the stored credential has no username).");
 
         var handler = new HttpClientHandler { CookieContainer = new CookieContainer(), UseCookies = true };
-        var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(180) };
+        var http = new HttpClient(handler) { Timeout = timeout ?? TimeSpan.FromSeconds(180) };
         var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["identity"] = user, ["password"] = pass });
         var login = await http.PostAsync(LoginUrl, form);
         if (!login.IsSuccessStatusCode) { http.Dispose(); login.EnsureSuccessStatusCode(); }

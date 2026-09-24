@@ -130,6 +130,43 @@ public class EvolutionTests
         Assert.True(full.Killed > 0.5 * none.Killed, $"kills with avoidance {full.Killed:F1} vs without {none.Killed:F1}");
     }
 
+    private static CatalogObject Obj(double perigeeKm, double apogeeKm, double massKg, double areaM2, string type = "R/B")
+    {
+        double rp = Constants.EarthRadiusKm + perigeeKm, ra = Constants.EarthRadiusKm + apogeeKm, a = 0.5 * (rp + ra);
+        double rev = Math.Sqrt(Constants.Mu / (a * a * a)) * Constants.SecondsPerDay / Constants.TwoPi;
+        var el = OrbitalElements.FromMeanMotionRevPerDay(rev, (ra - rp) / (ra + rp), 1.2, 0, 0, 0);
+        return new CatalogObject(el, massKg, areaM2, true, type);
+    }
+
+    [Fact]
+    public void EccentricOrbit_CountsItsTimeInLeo_AndDecaysFromPerigee()
+    {
+        // Perigee 300 km, apogee 3,000 km: it spends only part of each orbit below 2,000 km, and drag at
+        // perigee brings it down well before a circular object at its mean altitude (1,650 km) would move.
+        var ecc = new KesslerEvolution(new NailSpec());
+        ecc.SeedFromCatalog(new[] { Obj(300, 3000, 1500, 12) }, backgroundSmallTotal: 0, backgroundLargeTotal: 0);
+        Assert.Equal(1, ecc.EccentricCount);
+        Assert.InRange(ecc.EccentricPresenceTotal, 0.3, 0.9);
+        var r = ecc.Run(horizonYears: 30, dtDays: 10);
+        Assert.True(r.TrackableObjects[^1] < 0.05, $"left in LEO after 30 yr: {r.TrackableObjects[^1]:F3}");
+
+        var circ = new KesslerEvolution(new NailSpec());
+        circ.SeedFromCatalog(new[] { Obj(1650, 1650, 1500, 12) }, backgroundSmallTotal: 0, backgroundLargeTotal: 0);
+        Assert.Equal(0, circ.EccentricCount);
+        Assert.True(circ.Run(horizonYears: 30, dtDays: 10).TrackableObjects[^1] > 0.99);
+    }
+
+    [Fact]
+    public void IntactMassClasses_TakeTheirCatalogObjectsMassAndArea()
+    {
+        var m = new KesslerEvolution(new NailSpec());
+        var objs = Enumerable.Range(0, 20).Select(_ => Obj(800, 800, 1550, 12)).ToList();
+        m.SeedFromCatalog(objs, backgroundSmallTotal: 0, backgroundLargeTotal: 0);
+        var cls = m.Classes.Where(c => c.IsIntactMass).ToList();
+        Assert.Contains(cls, c => Math.Abs(c.MassKg - 1550) < 1e-6 && Math.Abs(c.AreaM2 - 12) < 1e-6);
+        Assert.Contains(cls, c => Math.Abs(c.MassKg - 2410) < 1e-6);   // traffic's rocket-body class unchanged
+    }
+
     [Fact]
     public void Run_EndsExactlyOnTheHorizon()
     {

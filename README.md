@@ -35,7 +35,7 @@ CelesTrak TLEs → CUDA J2 propagation → collision flux (spatial density)
 | `SpaceWars.Interop` | P/Invoke bindings (`Cuda`) + the tier-3 conjunction cascade |
 | `SpaceWars.Cli` | Assessment CLI and scenario runners |
 | `SpaceWars.Wpf` | Interactive analysis tool: the deck's analyses on your own inputs (see below) |
-| `SpaceWars.Tests` | 55 physics/GPU validation tests |
+| `SpaceWars.Tests` | 57 physics/GPU validation tests |
 
 ## Build & run
 
@@ -71,6 +71,7 @@ export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # or a generic Wind
 | `--deck` | every number the presentation quotes → `data/deck_numbers.json` (charts: `viz/render_deck_charts.py`) |
 | `--active-only` | use CelesTrak's active satellites instead of the full Space-Track on-orbit catalog |
 | `--calibrate-speed` / `--calibrate-comoving` | cube rate by encounter speed (real vs scrambled planes); what the slow pairs are |
+| `--benchmark-2006` | NASA benchmark: the 1 Jan 2006 catalog (Space-Track history), no launches, 200 years, vs LEGEND (Liou & Johnson 2006) → `data/benchmark_2006.json` |
 
 ### WPF tool
 

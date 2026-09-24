@@ -11,6 +11,7 @@ public sealed class DebrisClass
     public double MassKg, AreaM2;
     public bool IsNail;
     public bool IsWorking;   // a working satellite: holds altitude, dodges tracked objects, retires
+    public bool IsIntactMass; // an intact-object mass class (satellites, rocket bodies)
     public double AreaToMass => AreaM2 / MassKg;
 }
 
@@ -48,6 +49,22 @@ public sealed class KesslerEvolution
 {
     public double RelVelMetersPerSec { get; init; } = 10_000.0;
     public double SolarActivity { get; init; } = 1.0;
+    /// <summary>
+    /// 11-year solar cycle: activity = SolarActivity · e^(A·sin(2πt/11 yr)), so A = ln 2 swings it between half and
+    /// double. 0 (default) keeps it constant. Solar maximum heats the upper atmosphere and clears debris faster.
+    /// </summary>
+    public double SolarCycleAmplitude { get; init; } = 0.0;
+    private double _simSec;
+
+    /// <summary>
+    /// LEGEND's convention: only objects ≥10 cm take part in collisions (LEGEND simulates nothing smaller). Off by
+    /// default — the modelled 1–10 cm field and nails collide too. Used for like-for-like NASA benchmarks.
+    /// </summary>
+    public bool TrackedOnlyCollisions { get; init; } = false;
+    /// <summary>Catastrophic collisions so far, by shell (cumulative), and non-catastrophic ones between objects ≥10 cm.</summary>
+    public double[] CatastrophicByShell => (double[])_catByShell.Clone();
+    public double NonCatastrophicTrackedTotal { get; private set; }
+    private double[] _catByShell = [];
 
     /// <summary>Ongoing launch traffic: intact objects added per year (the Kessler driver).</summary>
     public double LaunchRatePerYear { get; set; } = 0.0;
@@ -141,6 +158,25 @@ public sealed class KesslerEvolution
     /// <summary>Collisions of working satellites with tracked objects that avoidance prevented.</summary>
     public double AvoidedTotal { get; private set; }
 
+    /// <summary>
+    /// Intact objects (satellites, rocket bodies) sit in seven mass classes spaced ×2.37 apart, 32 kg – 5.7 t, instead of
+    /// two (the 179 kg and 2.4 t size bins). The grid includes 180 kg and 2,410 kg exactly, so added traffic keeps
+    /// its masses; catalogued objects land within ×1.54 of their own mass. Fragment yield grows as mass^0.75, so
+    /// the two-class mapping overstated breakups of heavy objects (a 1.55 t rocket body modelled as 2.4 t).
+    /// </summary>
+    public bool FineIntactMasses { get; init; } = true;
+    public static readonly double[] IntactMassGridKg = { 32.0, 76.0, 180.0, 427.0, 1015.0, 2410.0, 5722.0 };
+
+    /// <summary>
+    /// Eccentric orbits (e above <see cref="EccentricMinE"/>) are followed object by object instead of being
+    /// placed at their mean altitude. Each spends the Kepler time fraction of its orbit in every shell it crosses
+    /// (NASA's "effective number"), collides there at that fraction, and decays by orbit-averaged drag, which acts
+    /// mostly near perigee: the apogee comes down while the perigee holds, until the orbit is circular. This brings
+    /// in objects whose mean altitude is above 2,000 km but whose perigee is in LEO.
+    /// </summary>
+    public bool EccentricOrbits { get; init; } = true;
+    public double EccentricMinE { get; init; } = 0.02;
+
     /// <summary>Altitude band [km] reported as the "belt" (<see cref="EvolutionResult.BeltTrackableObjects"/>).</summary>
     public double BeltLoKm { get; init; } = 700;
     public double BeltHiKm { get; init; } = 1100;
@@ -159,7 +195,9 @@ public sealed class KesslerEvolution
     public int NailClass => SizeClassCount;            // appended class index
     /// <summary>Working satellites (<see cref="WorkingSatellites"/>): same size and mass as the ~180 kg intact class.</summary>
     public int WorkingClass => SizeClassCount + 1;
-    private readonly int _nc;                          // total classes incl. nails and working satellites
+    /// <summary>First of the intact-mass classes (<see cref="IntactMassGridKg"/>).</summary>
+    public int IntactGridStart => SizeClassCount + 2;
+    private readonly int _nc;                          // size classes, nails, working satellites, intact masses
 
     private readonly int _nShell;
     private readonly double _minAlt, _binKm;
@@ -180,7 +218,7 @@ public sealed class KesslerEvolution
             _volM3[s] = 4.0 / 3.0 * Math.PI * (rHi * rHi * rHi - rLo * rLo * rLo);
         }
 
-        _nc = SizeClassCount + 2;
+        _nc = SizeClassCount + 2 + IntactMassGridKg.Length;
         _cls = new DebrisClass[_nc];
         for (int c = 0; c < SizeClassCount; c++)
         {
@@ -198,7 +236,46 @@ public sealed class KesslerEvolution
         {
             LcLoM = sat.LcLoM, LcHiM = sat.LcHiM, LcM = sat.LcM, MassKg = sat.MassKg, AreaM2 = sat.AreaM2, IsWorking = true,
         };
+        for (int g = 0; g < IntactMassGridKg.Length; g++)
+        {
+            double lc = LcForIntactMass(IntactMassGridKg[g]);
+            _cls[IntactGridStart + g] = new DebrisClass
+            {
+                LcLoM = lc, LcHiM = lc, LcM = lc, MassKg = IntactMassGridKg[g], AreaM2 = BreakupModel.AreaFromLc(lc), IsIntactMass = true,
+            };
+        }
         _n = new double[_nShell, _nc];
+        _catByShell = new double[_nShell];
+    }
+
+    /// <summary>Characteristic length [m] of an intact object of the given mass (inverse of the bulk-density law).</summary>
+    private static double LcForIntactMass(double kg)
+    {
+        double lo = 0.01, hi = 50;
+        for (int it = 0; it < 80; it++) { double mid = Math.Sqrt(lo * hi); if (BreakupModel.IntactMassFromLc(mid) < kg) lo = mid; else hi = mid; }
+        return Math.Sqrt(lo * hi);
+    }
+
+    private int GridClassFor(double kg)
+    {
+        int best = 0; double bestD = double.MaxValue, lm = Math.Log(Math.Max(kg, 1e-6));
+        for (int g = 0; g < IntactMassGridKg.Length; g++)
+        {
+            double d = Math.Abs(Math.Log(IntactMassGridKg[g]) - lm);
+            if (d < bestD) { bestD = d; best = g; }
+        }
+        return IntactGridStart + best;
+    }
+
+    /// <summary>Class for a ~180 kg satellite and a ~2.4 t rocket body (launch traffic, the modelled large belt, dead satellites).</summary>
+    private int SatClass => FineIntactMasses ? GridClassFor(180) : IntactClassStart;
+    private int RocketBodyClass => FineIntactMasses ? GridClassFor(2410) : IntactClassStart + 1;
+
+    /// <summary>Intact classes that can explode or be removed: the two large size bins and the intact-mass grid.</summary>
+    private IEnumerable<int> IntactPool()
+    {
+        for (int c = IntactClassStart; c < SizeClassCount; c++) yield return c;
+        for (int c = IntactGridStart; c < _nc; c++) yield return c;
     }
 
     public IReadOnlyList<DebrisClass> Classes => _cls;
@@ -224,8 +301,8 @@ public sealed class KesslerEvolution
         {
             int s = ShellOf(el.SemiMajorAxis - Constants.EarthRadiusKm);
             if (s < 0) continue;
-            _n[s, 5] += largeIntactFraction;
-            _n[s, 4] += 1.0 - largeIntactFraction;
+            _n[s, RocketBodyClass] += largeIntactFraction;
+            _n[s, SatClass] += 1.0 - largeIntactFraction;
         }
         SeedBackground(backgroundSmallTotal, backgroundLargeTotal);
     }
@@ -237,12 +314,30 @@ public sealed class KesslerEvolution
         double backgroundSmallTotal = 1_000_000, double backgroundLargeTotal = -1)
     {
         if (backgroundLargeTotal < 0) backgroundLargeTotal = DebrisEnvironment.LargeBeltFor(objects);
+        // Intact-mass classes take the mean mass and area of the catalogued objects filed in them (the catalog's
+        // own RCS-derived values), so a class stands for its objects rather than for a grid point.
+        var sumM = new double[_nc]; var sumA = new double[_nc]; var cnt = new int[_nc];
         foreach (var o in objects)
         {
+            int c = WorkingSatellites && o.IsActive ? WorkingClass
+                  : FineIntactMasses && o.IsIntact ? GridClassFor(o.MassKg) : NearestSizeClass(o.MassKg);
+            if (_cls[c].IsIntactMass) { sumM[c] += o.MassKg; sumA[c] += o.AreaM2; cnt[c]++; }
+            if (EccentricOrbits && c != WorkingClass && o.Elements.Eccentricity > EccentricMinE)
+            {
+                AddEccentric(o.Elements.SemiMajorAxis, o.Elements.SemiMajorAxis * (1 - o.Elements.Eccentricity), c, 1.0);
+                continue;
+            }
             int s = ShellOf(o.Elements.SemiMajorAxis - Constants.EarthRadiusKm);
             if (s < 0) continue;
-            _n[s, WorkingSatellites && o.IsActive ? WorkingClass : NearestSizeClass(o.MassKg)] += 1.0;
+            _n[s, c] += 1.0;
         }
+        for (int c = 0; c < _nc; c++)
+        {
+            if (cnt[c] == 0) continue;
+            double area = sumA[c] / cnt[c], lc = BreakupModel.LcFromArea(area);
+            _cls[c].MassKg = sumM[c] / cnt[c]; _cls[c].AreaM2 = area; _cls[c].LcM = _cls[c].LcLoM = _cls[c].LcHiM = lc;
+        }
+        foreach (var o in _ecc) if (_cls[o.C].IsIntactMass) UpdateResidence(o);
         SeedBackground(backgroundSmallTotal, backgroundLargeTotal);
     }
 
@@ -270,8 +365,8 @@ public sealed class KesslerEvolution
             double f = w[s] / wsum;
             _n[s, 0] += 0.7 * backgroundSmallTotal * f;
             _n[s, 1] += 0.3 * backgroundSmallTotal * f;
-            _n[s, 4] += 0.85 * backgroundLargeTotal * f;
-            _n[s, 5] += 0.15 * backgroundLargeTotal * f;
+            _n[s, SatClass] += 0.85 * backgroundLargeTotal * f;
+            _n[s, RocketBodyClass] += 0.15 * backgroundLargeTotal * f;
         }
     }
 
@@ -299,7 +394,8 @@ public sealed class KesslerEvolution
     public double TotalDebris()
     {
         double t = 0;
-        for (int s = 0; s < _nShell; s++) for (int c = 0; c < SizeClassCount; c++) t += _n[s, c];
+        for (int s = 0; s < _nShell; s++) for (int c = 0; c < _nc; c++) if (!_cls[c].IsNail && !_cls[c].IsWorking) t += _n[s, c];
+        foreach (var o in _ecc) t += o.W * o.F.Sum();
         return t;
     }
     /// <summary>Objects ≥10 cm across LEO (size classes whose lower edge is ≥10 cm; nails excluded).</summary>
@@ -312,7 +408,8 @@ public sealed class KesslerEvolution
         for (int s = 0; s < _nShell; s++)
         {
             if (_midAlt[s] < loKm || _midAlt[s] >= hiKm) continue;
-            for (int c = 0; c < SizeClassCount; c++) if (_cls[c].LcLoM >= 0.1 - 1e-12) t += _n[s, c];
+            for (int c = 0; c < _nc; c++) if (IsTrackedSize(c) && !_cls[c].IsWorking) t += _n[s, c];
+            foreach (var o in _ecc) if (IsTrackedSize(o.C)) t += o.W * o.F[s];
         }
         return t;
     }
@@ -344,6 +441,7 @@ public sealed class KesslerEvolution
                 double sigma = Math.Pow(sqrtSat + Math.Sqrt(_cls[c].AreaM2), 2.0);
                 sum += _n[s, c] / V * sigma;
             }
+            foreach (var o in _ecc) sum += o.W * o.F[s] / V * Math.Pow(sqrtSat + Math.Sqrt(_cls[o.C].AreaM2), 2.0);
             haz[s] = sum * relVelMetersPerSec * secYr;
         }
         return haz;
@@ -354,16 +452,26 @@ public sealed class KesslerEvolution
     {
         var dN = new double[_nShell, _nc];
         double catastrophic = 0;
+        var E = EccentricPresence();
+        var eLoss = new double[_nShell, _nc];
+        // Remove `amt` objects of class c in shell s, shared between residents and eccentric visitors by presence.
+        void Take(int s, int c, double amt)
+        {
+            double tot = _n[s, c] + E[s, c], share = tot > 0 ? E[s, c] / tot : 0;
+            dN[s, c] -= amt * (1 - share); eLoss[s, c] += amt * share;
+        }
 
         for (int s = 0; s < _nShell; s++)
         {
             double V = _volM3[s];
             for (int j = 0; j < _nc; j++)
             {
-                double nj = _n[s, j]; if (nj <= 0) continue;
+                double nj = _n[s, j] + E[s, j]; if (nj <= 0) continue;
                 for (int k = j; k < _nc; k++)
                 {
-                    double nk = _n[s, k]; if (nk <= 0) continue;
+                    double nk = _n[s, k] + E[s, k]; if (nk <= 0) continue;
+                    bool bothTracked = IsTrackedSize(j) && IsTrackedSize(k);
+                    if (TrackedOnlyCollisions && !bothTracked) continue;
                     double sigma = Math.Pow(Math.Sqrt(_cls[j].AreaM2) + Math.Sqrt(_cls[k].AreaM2), 2.0);
                     double pairRate = (j == k ? 0.5 * nj * nk : nj * nk) / V * sigma * RelVelMetersPerSec;
                     double events = pairRate * dtSec;
@@ -388,16 +496,17 @@ public sealed class KesslerEvolution
                     // Clamp so a single step can't remove more than exists.
                     if (cat)
                     {
-                        events = Math.Min(events, Math.Min(_n[s, j], _n[s, k]));
+                        events = Math.Min(events, Math.Min(nj, nk));
                         if (events <= 0) continue;
-                        dN[s, j] -= events; dN[s, k] -= events;
-                        catastrophic += events;
+                        Take(s, j, events); Take(s, k, events);
+                        catastrophic += events; _catByShell[s] += events;
                     }
                     else
                     {
-                        events = Math.Min(events, _n[s, projClass]);
+                        events = Math.Min(events, projClass == j ? nj : nk);
                         if (events <= 0) continue;
-                        dN[s, projClass] -= events;
+                        Take(s, projClass, events);
+                        if (bothTracked) NonCatastrophicTrackedTotal += events;
 
                         // A working satellite that survives the hit is still dead (mission kill): it can no
                         // longer manoeuvre or deorbit, so it joins the intact derelicts.
@@ -405,7 +514,7 @@ public sealed class KesslerEvolution
                         if (_cls[target].IsWorking && target != projClass)
                         {
                             double kill = Math.Min(events, Math.Max(0.0, _n[s, target] + dN[s, target]));
-                            dN[s, target] -= kill; dN[s, IntactClassStart] += kill; MissionKillsTotal += kill;
+                            dN[s, target] -= kill; dN[s, SatClass] += kill; MissionKillsTotal += kill;
                         }
                     }
 
@@ -417,6 +526,7 @@ public sealed class KesslerEvolution
             }
         }
 
+        ApplyEccentricLosses(E, eLoss);
         ApplyExplosions(dN, dtSec);
 
         // Apply, clamping to [0, SaturationCap]. The cap keeps a violent (physically absurd)
@@ -431,11 +541,16 @@ public sealed class KesslerEvolution
             }
 
         DragMigrate(dtSec);
+        EccentricDrag(dtSec);
         ApplyRetirement(dtSec);
         ApplyLaunch(dtSec);
         ApplyRemoval(dtSec);
+        _simSec += dtSec;
         return catastrophic;
     }
+
+    /// <summary>Size classes ≥10 cm (not nails): what LEGEND simulates.</summary>
+    private bool IsTrackedSize(int c) => !_cls[c].IsNail && _cls[c].LcLoM >= 0.1 - 1e-12;
 
     /// <summary>Tracked (≥10 cm, catalogued) classes: the ones a working satellite can see coming and dodge.</summary>
     private bool IsTracked(int c) => _cls[c].IsWorking || (!_cls[c].IsNail && _cls[c].LcLoM >= 0.1 - 1e-12);
@@ -453,7 +568,7 @@ public sealed class KesslerEvolution
             double retire = _n[s, WorkingClass] * f; if (retire <= 0) continue;
             _n[s, WorkingClass] -= retire;
             double dead = retire * (1.0 - DisposalSuccess);
-            _n[s, IntactClassStart] += dead;
+            _n[s, SatClass] += dead;
             DisposedTotal += retire - dead; FailedDisposalTotal += dead;
         }
     }
@@ -475,7 +590,7 @@ public sealed class KesslerEvolution
         for (int s = 0; s < _nShell; s++)
         {
             double V = _volM3[s];
-            for (int c = IntactClassStart; c < SizeClassCount; c++)
+            foreach (int c in IntactPool())
             {
                 if (_n[s, c] <= 0) continue;
                 double rate = 0;   // collisions per second for one object of class c in shell s
@@ -517,11 +632,117 @@ public sealed class KesslerEvolution
         if (WorkingSatellites)
         {
             _n[s, WorkingClass] += 0.85 * add;                   // working satellites
-            _n[s, 5] += 0.15 * add * (1.0 - RocketBodyDisposal); // rocket bodies left behind
+            _n[s, RocketBodyClass] += 0.15 * add * (1.0 - RocketBodyDisposal); // rocket bodies left behind
             return;
         }
-        _n[s, 4] += 0.85 * add;  // ~180 kg intacts (payloads / debris)
-        _n[s, 5] += 0.15 * add;  // ~2.4 t rocket bodies
+        _n[s, SatClass] += 0.85 * add;         // ~180 kg intacts (payloads / debris)
+        _n[s, RocketBodyClass] += 0.15 * add;  // ~2.4 t rocket bodies
+    }
+
+    // ------------------------------------------------------------------ eccentric orbits ----------
+
+    private sealed class Ecc
+    {
+        public double A, Rp, W;   // semi-major axis and perigee radius [km], objects represented
+        public int C;             // class
+        public double[] F = [];   // time fraction in each shell
+        public double AF;         // semi-major axis F was computed at
+        public double Rate;       // orbit-averaged da/dt [km/s]
+        public double ARate = double.NaN; public int RateAge;
+    }
+    private readonly List<Ecc> _ecc = new();
+
+    /// <summary>Eccentric objects being followed individually, and their total LEO presence (Σ weight × time in LEO).</summary>
+    public int EccentricCount => _ecc.Count;
+    public double EccentricPresenceTotal => _ecc.Sum(o => o.W * o.F.Sum());
+
+    private void AddEccentric(double aKm, double rpKm, int cls, double w)
+    {
+        if (rpKm - Constants.EarthRadiusKm < AtmosphericDrag.ReentryAltitudeKm) return;
+        var o = new Ecc { A = aKm, Rp = rpKm, W = w, C = cls };
+        UpdateResidence(o);
+        if (o.F.Sum() > 0) _ecc.Add(o);
+    }
+
+    /// <summary>Fraction of the orbit's time with radius below R (Kepler: r = a(1 − e cos E), M = E − e sin E).</summary>
+    private static double TimeBelow(double R, double a, double e)
+    {
+        double rp = a * (1 - e), ra = a * (1 + e);
+        if (R <= rp) return 0; if (R >= ra) return 1;
+        double E = Math.Acos(Math.Clamp((1 - R / a) / e, -1, 1));
+        return (E - e * Math.Sin(E)) / Math.PI;
+    }
+
+    private void UpdateResidence(Ecc o)
+    {
+        double e = 1 - o.Rp / o.A, re = Constants.EarthRadiusKm;
+        var f = new double[_nShell];
+        for (int s = 0; s < _nShell; s++)
+        {
+            double lo = re + _minAlt + s * _binKm, hi = lo + _binKm;
+            f[s] = TimeBelow(hi, o.A, e) - TimeBelow(lo, o.A, e);
+        }
+        o.F = f; o.AF = o.A;
+    }
+
+    private double[,] EccentricPresence()
+    {
+        var E = new double[_nShell, _nc];
+        foreach (var o in _ecc)
+            for (int s = 0; s < _nShell; s++) if (o.F[s] > 0) E[s, o.C] += o.W * o.F[s];
+        return E;
+    }
+
+    /// <summary>Collisions that took eccentric objects: each loses its share (weight × time in that shell).</summary>
+    private void ApplyEccentricLosses(double[,] E, double[,] eLoss)
+    {
+        foreach (var o in _ecc)
+        {
+            double w0 = o.W, lost = 0;
+            for (int s = 0; s < _nShell; s++)
+                if (o.F[s] > 0 && E[s, o.C] > 0 && eLoss[s, o.C] > 0) lost += eLoss[s, o.C] * (w0 * o.F[s] / E[s, o.C]);
+            o.W = Math.Max(0, w0 - lost);
+        }
+        _ecc.RemoveAll(o => o.W <= 1e-9);
+    }
+
+    /// <summary>
+    /// Orbit-averaged drag on an eccentric orbit: da/dt = −(a²/μ)·C_D·(A/m)·⟨ρ v³⟩ over the orbit (the energy loss
+    /// rate; for a circular orbit this is the usual −ρ C_D (A/m) √(μa)). The perigee holds while the apogee comes
+    /// down; once the orbit is nearly circular the object joins its shell's population.
+    /// </summary>
+    private void EccentricDrag(double dtSec)
+    {
+        if (_ecc.Count == 0) return;
+        double activity = SolarActivity * (SolarCycleAmplitude == 0 ? 1.0
+            : Math.Exp(SolarCycleAmplitude * Math.Sin(2 * Math.PI * _simSec / (11.0 * 365.25 * Constants.SecondsPerDay))));
+        const double muM = Constants.Mu * 1e9; const int K = 48;
+        foreach (var o in _ecc)
+        {
+            if (double.IsNaN(o.ARate) || Math.Abs(o.A - o.ARate) > 1.0 || ++o.RateAge >= (SolarCycleAmplitude == 0 ? 36 : 6))
+            {
+                double a = o.A, e = 1 - o.Rp / a, aM = a * 1000, am = _cls[o.C].AreaToMass, sum = 0, wsum = 0;
+                for (int k = 0; k < K; k++)
+                {
+                    double Ek = (k + 0.5) * Math.PI / K, w = 1 - e * Math.Cos(Ek), r = a * w;   // dM = (1 − e cos E) dE
+                    double rho = AtmosphericDrag.Density(r - Constants.EarthRadiusKm, activity);
+                    double v2 = muM * (2 / (r * 1000) - 1 / aM);
+                    sum += w * rho * Math.Pow(Math.Max(v2, 0), 1.5); wsum += w;
+                }
+                o.Rate = -(aM * aM / muM) * AtmosphericDrag.DragCoefficient * am * (sum / wsum) / 1000.0;   // km/s
+                o.ARate = o.A; o.RateAge = 0;
+            }
+            o.A = Math.Max(o.Rp, o.A + o.Rate * dtSec);
+            if (Math.Abs(o.A - o.AF) > 1.0) UpdateResidence(o);
+        }
+        // Nearly circular now: hand over to the shell population (or gone, if below the model).
+        foreach (var o in _ecc.Where(o => 1 - o.Rp / o.A < 0.5 * EccentricMinE).ToList())
+        {
+            int s = ShellOf(o.A - Constants.EarthRadiusKm);
+            if (s >= 0) _n[s, o.C] += o.W;
+            o.W = 0;
+        }
+        _ecc.RemoveAll(o => o.W <= 1e-9);
     }
 
     private void DepositFragments(double[,] dN, int s, double meff, double events, double availMass)
@@ -545,7 +766,7 @@ public sealed class KesslerEvolution
         if (_explPerKgSec < 0)
         {
             double m = 0;
-            for (int s = 0; s < _nShell; s++) for (int c = IntactClassStart; c < SizeClassCount; c++) m += _n[s, c] * _cls[c].MassKg;
+            foreach (int c in IntactPool()) for (int s = 0; s < _nShell; s++) m += _n[s, c] * _cls[c].MassKg;
             _explPerKgSec = m > 0 ? ExplosionsPerYear / (365.25 * Constants.SecondsPerDay) / m : 0;
         }
         if (_explPerKgSec <= 0) return;
@@ -553,7 +774,7 @@ public sealed class KesslerEvolution
         Span<double> mass = stackalloc double[SizeClassCount];
         Span<double> cnt = stackalloc double[SizeClassCount];
         for (int c = 0; c < SizeClassCount; c++) mass[c] = _cls[c].MassKg;
-        for (int c = IntactClassStart; c < SizeClassCount; c++)
+        foreach (int c in IntactPool())
         {
             BreakupModel.DistributeExplosionFragments(_cls[c].MassKg, LcEdges, mass, cnt, ExplosionScale);
             for (int s = 0; s < _nShell; s++)
@@ -601,6 +822,8 @@ public sealed class KesslerEvolution
 
     private void DragMigrate(double dtSec)
     {
+        double activity = SolarActivity * (SolarCycleAmplitude == 0 ? 1.0
+            : Math.Exp(SolarCycleAmplitude * Math.Sin(2 * Math.PI * _simSec / (11.0 * 365.25 * Constants.SecondsPerDay))));
         for (int s = 0; s < _nShell; s++)
         {
             double a = Constants.EarthRadiusKm + _midAlt[s];
@@ -608,7 +831,7 @@ public sealed class KesslerEvolution
             {
                 if (_cls[c].IsWorking) continue;   // station-keeping: working satellites hold their altitude
                 double pop = _n[s, c]; if (pop <= 0) continue;
-                double rateKmDay = -AtmosphericDrag.SemiMajorAxisDecayRateKmPerSec(a, _cls[c].AreaToMass, SolarActivity) * 86400.0;
+                double rateKmDay = -AtmosphericDrag.SemiMajorAxisDecayRateKmPerSec(a, _cls[c].AreaToMass, activity) * 86400.0;
                 if (rateKmDay <= 1e-9) continue;
                 double tauSec = (_binKm / rateKmDay) * 86400.0;
                 double moved = pop * (1.0 - Math.Exp(-dtSec / tauSec));
