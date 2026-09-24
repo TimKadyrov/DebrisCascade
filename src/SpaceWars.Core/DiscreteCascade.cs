@@ -18,6 +18,8 @@ public sealed class CascadeResult
     public double[] BeltTrackableObjects = [];
     /// <summary>Working satellites (cube engine with WorkingSatellites on); empty otherwise.</summary>
     public double[] WorkingSatellites = [];
+    /// <summary>Objects ≥10 cm weighted by time between 200 and 2,000 km (cube engine; NASA's effective number).</summary>
+    public double[] LeoEffectiveTrackable = [];
 }
 
 /// <summary>

@@ -62,6 +62,26 @@ public static class AtmosphericDrag
     }
 
     /// <summary>
+    /// Orbit-averaged semi-major-axis decay rate [km/s] for an eccentric orbit: da/dt = −(a²/μ)·C_D·(A/m)·⟨ρ v³⟩,
+    /// the drag energy-loss rate averaged over the orbit in time (dM = (1 − e cos E) dE). For e = 0 it is the
+    /// circular rate above. Drag acts mostly near perigee, so the apogee comes down while the perigee holds.
+    /// </summary>
+    public static double OrbitAveragedDecayRateKmPerSec(double aKm, double e, double areaToMass, double solarActivity = 1.0)
+    {
+        if (e < 1e-4) return SemiMajorAxisDecayRateKmPerSec(aKm, areaToMass, solarActivity);
+        const double muM = Constants.Mu * 1e9; const int K = 48;
+        double aM = aKm * 1000, sum = 0, wsum = 0;
+        for (int k = 0; k < K; k++)
+        {
+            double Ek = (k + 0.5) * Math.PI / K, w = 1 - e * Math.Cos(Ek), r = aKm * w;
+            double rho = Density(r - Constants.EarthRadiusKm, solarActivity);
+            double v2 = muM * (2 / (r * 1000) - 1 / aM);
+            sum += w * rho * Math.Pow(Math.Max(v2, 0), 1.5); wsum += w;
+        }
+        return -(aM * aM / muM) * DragCoefficient * areaToMass * (sum / wsum) / 1000.0;
+    }
+
+    /// <summary>
     /// Orbital lifetime [days] for a circular orbit, integrating the decay until reentry.
     /// Returns +∞ if effectively stable on a millennium scale.
     /// </summary>

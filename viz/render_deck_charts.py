@@ -209,3 +209,32 @@ if "working" in D:
               title="deorbited satellites / rocket bodies / conjunctions avoided", title_fontsize=8.5, ncol=1)
     tag(f, "box model · 50 years · vs today's belt objects ≥10 cm; working satellites not counted as debris")
     save(f, "deck_working.png")
+
+# --- NASA benchmark: the 1 Jan 2006 catalog, no launches, 200 years, vs LEGEND (Liou & Johnson 2006) ---------
+BP = os.path.join(HERE, "..", "data", "benchmark_2006.json")
+if os.path.exists(BP):
+    B = json.load(open(BP, encoding="utf-8")); runs = {r["Name"]: r for r in B["runs"]}
+    old = runs.get("before: two intact mass classes, mean-altitude shells"); new = runs.get("finer masses + eccentric orbits")
+    cubes = [r for r in B["runs"] if r["Name"].startswith("cube engine")]
+    def g50(r):
+        y = r["Years"]; k = min(range(len(y)), key=lambda i: abs(y[i] - 50)); return (r["LeoTrackable"][k] / r["LeoTrackable"][0] - 1) * 100
+    f, axs = plt.subplots(1, 2, figsize=(5.4, 2.35), dpi=200, facecolor="white")
+    f.subplots_adjust(left=0.1, right=0.98, top=0.8, bottom=0.2, wspace=0.45)
+    labels = ["NASA\nLEGEND", "old\nbox", "box", "cube"]
+    for ax, (title, legend_v, fn) in zip(axs, [("catastrophic collisions\nin 200 years", 10.8, lambda r: r["CatastrophicTotal"]),
+                                                ("≥10 cm objects in LEO,\nchange after 50 years (%)", 0.0, g50)]):
+        for sp in ("top", "right"): ax.spines[sp].set_visible(False)
+        vals = [legend_v, fn(old), fn(new), np.mean([fn(c) for c in cubes]) if cubes else np.nan]
+        cols = [GREEN, MUTE, BLUE, ORANGE]
+        ax.bar(range(4), vals, color=cols, width=0.62)
+        if cubes:
+            cv = [fn(c) for c in cubes]
+            ax.errorbar(3, np.mean(cv), yerr=[[np.mean(cv) - min(cv)], [max(cv) - np.mean(cv)]], fmt="none", ecolor=INK, capsize=3, lw=1)
+        for k, v in enumerate(vals):
+            if np.isfinite(v):
+                ax.text(k - (0.22 if k == 3 else 0), max(v, 0) + (0.02 * max(abs(x) for x in vals if np.isfinite(x)) + 0.3), f"{v:.1f}" if k != 0 or title.startswith("cat") else "≈0",
+                        ha="center", va="bottom", fontsize=7.5, weight="bold", color=INK)
+        ax.set_xticks(range(4)); ax.set_xticklabels(labels, fontsize=7); ax.tick_params(axis="y", labelsize=7)
+        ax.set_title(title, fontsize=8, color=INK); ax.axhline(0, color=MUTE, lw=0.8)
+    tag(f, f"1 Jan 2006 catalog, no launches or explosions, ≥10 cm only · cube: {len(cubes)} seeds")
+    save(f, "deck_benchmark.png")

@@ -482,7 +482,7 @@ if (opts.Deck)
 if (opts.Benchmark2006)
 {
     Console.WriteLine("--- NASA benchmark: LEGEND no-launch projection from 1 Jan 2006 (data/benchmark_2006.json) ---");
-    var bench = await NasaBenchmark.ComputeAsync(dataDir, s => Console.WriteLine(s));
+    var bench = await NasaBenchmark.ComputeAsync(dataDir, s => Console.WriteLine(s), opts.BenchmarkCubeSeeds);
     string benchPath = Path.Combine(dataDir, "benchmark_2006.json");
     File.WriteAllText(benchPath, System.Text.Json.JsonSerializer.Serialize(bench, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
     Console.WriteLine($"   wrote {benchPath}\n");
@@ -627,6 +627,7 @@ file sealed class CliOptions
     public bool CalibrateSpeed;
     public bool CalibrateComoving;
     public bool Benchmark2006;
+    public int BenchmarkCubeSeeds;
 
     public static CliOptions Parse(string[] args)
     {
@@ -655,6 +656,7 @@ file sealed class CliOptions
                 case "--group": o.Group = args[++i]; break;
                 case "--file": o.OfflineFile = args[++i]; break;
                 case "--nails": o.NailCount = (int)D(args[++i]); break;
+                case "--cube-seeds": o.BenchmarkCubeSeeds = (int)D(args[++i]); break;
                 case "--alt": o.AltKm = D(args[++i]); break;
                 case "--inc": o.IncDeg = D(args[++i]); break;
                 case "--sigma": o.DispersalSigmaMS = D(args[++i]); break;

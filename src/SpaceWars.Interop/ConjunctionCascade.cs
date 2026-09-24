@@ -92,6 +92,27 @@ public sealed class ConjunctionCascade
     public double DisposedTotal { get; private set; }
     public double FailedDisposalTotal { get; private set; }
     public double MissionKillsTotal { get; private set; }
+    /// <summary>LEGEND's convention for like-for-like NASA benchmarks: only objects ≥10 cm (not nails) collide.</summary>
+    public bool TrackedOnlyCollisions { get; init; } = false;
+    /// <summary>Catastrophic collisions so far by 50 km shell of the collision point (200–2,000 km), and
+    /// non-catastrophic ones between objects ≥10 cm.</summary>
+    public double[] CatastrophicByShell => (double[])_catByShell.Clone();
+    public double NonCatastrophicTrackedTotal { get; private set; }
+    /// <summary>Catastrophic collisions between objects of the same super-particle (its self-pairs).</summary>
+    public double SelfPairCatastrophicTotal { get; private set; }
+    private readonly double[] _catByShell = new double[36];
+    private bool IsTrackedSize(int i) => !_isNail[i] && _area[i] >= TrackableAreaM2;
+
+    /// <summary>Objects ≥10 cm in LEO counted as NASA does: each weighted by its orbit's time between 200 and 2,000 km.</summary>
+    public double EffectiveLeoTrackable()
+    {
+        double t = 0;
+        for (int i = 0; i < _w.Count; i++)
+            if (_alive[i] && !_isNail[i] && !_working[i] && _area[i] >= TrackableAreaM2)
+                t += _w[i] * OrbitGeometry.TimeBetweenAltitudes(_els[i].SemiMajorAxis, _els[i].Eccentricity, 200, 2000);
+        return t;
+    }
+
     public double TotalWorking() { double t = 0; for (int i = 0; i < _w.Count; i++) if (_alive[i] && _working[i]) t += _w[i]; return t; }
 
     private static readonly double[] LcEdges = BreakupModel.SizeBinEdges;
@@ -321,6 +342,7 @@ public sealed class ConjunctionCascade
                         double dvx = st[6 * i + 3] - st[6 * j + 3], dvy = st[6 * i + 4] - st[6 * j + 4], dvz = st[6 * i + 5] - st[6 * j + 5];
                         double vrel = Math.Sqrt(dvx * dvx + dvy * dvy + dvz * dvz) * 1000.0; // m/s
                         if (vrel <= 0 || FormationNeighbours(i, j, st)) continue;
+                        if (TrackedOnlyCollisions && (!IsTrackedSize(i) || !IsTrackedSize(j))) continue;
                         double sigma = (_sqrtA[i] + _sqrtA[j]); sigma *= sigma; // m^2
                         double lam = _w[i] * _w[j] * sigma * vrel * dtSub / Vcube * AvoidFactor(i, j);
                         int ev = Poisson(lam); if (ev == 0) continue;
@@ -339,6 +361,7 @@ public sealed class ConjunctionCascade
         for (int i = 0; i < _els.Count; i++)
         {
             if (!_alive[i] || _w[i] <= 1) continue;
+            if (TrackedOnlyCollisions && !IsTrackedSize(i)) continue;
             var el = _els[i]; if (el.MeanMotion <= 0) continue;
             double alt = el.SemiMajorAxis - Constants.EarthRadiusKm;
             double rLo = (Constants.EarthRadiusKm + Math.Floor(alt / 50.0) * 50.0) * 1000.0, rHi = rLo + 50_000.0;
@@ -367,11 +390,14 @@ public sealed class ConjunctionCascade
                 frac = h.I == h.J ? Math.Min(events, _w[h.I] / 2.0) : Math.Min(events, Math.Min(_w[h.I], _w[h.J]));
                 _w[h.I] -= frac; _w[h.J] -= frac;
                 if (_w[h.I] <= 1e-9) _alive[h.I] = false; if (_w[h.J] <= 1e-9) _alive[h.J] = false;
-                catastrophic += frac;
+                catastrophic += frac; if (h.I == h.J) SelfPairCatastrophicTotal += frac;
+                int sh = (int)Math.Floor((Math.Sqrt(h.Px * h.Px + h.Py * h.Py + h.Pz * h.Pz) - Constants.EarthRadiusKm - 200) / 50.0);
+                if (sh >= 0 && sh < _catByShell.Length) _catByShell[sh] += frac;
             }
             else
             {
                 frac = Math.Min(events, _w[proj]); _w[proj] -= frac; if (_w[proj] <= 1e-9) _alive[proj] = false;
+                if (IsTrackedSize(h.I) && IsTrackedSize(h.J)) NonCatastrophicTrackedTotal += frac;
                 int tgt = proj == h.I ? h.J : h.I;   // a working satellite that survives the hit is still dead
                 if (tgt != proj && _working[tgt]) { double k0 = Math.Min(frac, _w[tgt]); KillWorking(tgt, k0); MissionKillsTotal += k0; }
             }
@@ -534,9 +560,14 @@ public sealed class ConjunctionCascade
         {
             if (!_alive[i] || _working[i]) continue;   // station-keeping
             var el = _els[i];
-            double rate = -AtmosphericDrag.SemiMajorAxisDecayRateKmPerSec(el.SemiMajorAxis, _area[i] / _mass[i], SolarActivity);
-            double a = el.SemiMajorAxis - rate * dtSec;
+            // Orbit-averaged drag: an eccentric orbit loses energy mostly at perigee, so its apogee comes down
+            // while the perigee holds (the circular formula at the mean altitude would barely move it).
+            double rp = el.SemiMajorAxis * (1 - el.Eccentricity);
+            if (rp <= reentryA) { _alive[i] = false; continue; }
+            double rate = -AtmosphericDrag.OrbitAveragedDecayRateKmPerSec(el.SemiMajorAxis, el.Eccentricity, _area[i] / _mass[i], SolarActivity);
+            double a = Math.Max(rp, el.SemiMajorAxis - rate * dtSec);
             if (a <= reentryA) { _alive[i] = false; continue; }
+            el.Eccentricity = Math.Max(0, 1 - rp / a);
             el.SemiMajorAxis = a; el.MeanMotion = Math.Sqrt(Constants.Mu / (a * a * a)); el.ComputeSecularRates();
             _els[i] = el;
         }
@@ -817,7 +848,7 @@ public sealed class ConjunctionCascade
     public CascadeResult Run(double horizonYears = 50, double dtDays = 60)
     {
         var yr = new List<double> { 0 }; var tot = new List<double> { TotalObjects() }; var trk = new List<double> { TotalTrackable() }; var belt = new List<double> { TotalTrackable(BeltLoKm, BeltHiKm) };
-        var cs = new List<double> { TotalCrossSection() }; var cpy = new List<double> { 0 }; var nl = new List<double> { TotalNails() }; var wk = new List<double> { TotalWorking() };
+        var cs = new List<double> { TotalCrossSection() }; var cpy = new List<double> { 0 }; var nl = new List<double> { TotalNails() }; var wk = new List<double> { TotalWorking() }; var eff = new List<double> { EffectiveLeoTrackable() };
         double catAccum = 0, t = 0, nextYear = 0, doneDays = 0, totalDays = horizonYears * 365.25;
         // Last step is shortened so the run ends exactly on the horizon (and records its final year).
         while (doneDays < totalDays - 1e-9)
@@ -830,10 +861,10 @@ public sealed class ConjunctionCascade
             if (t >= nextYear + 1 - 1e-9)
             {
                 nextYear += 1;
-                yr.Add(t); tot.Add(TotalObjects()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); cs.Add(TotalCrossSection()); cpy.Add(catAccum); nl.Add(TotalNails()); wk.Add(TotalWorking());
+                yr.Add(t); tot.Add(TotalObjects()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); cs.Add(TotalCrossSection()); cpy.Add(catAccum); nl.Add(TotalNails()); wk.Add(TotalWorking()); eff.Add(EffectiveLeoTrackable());
                 catAccum = 0;
             }
         }
-        return new CascadeResult { Years = yr.ToArray(), TotalObjects = tot.ToArray(), TotalCrossSection = cs.ToArray(), CatastrophicPerYear = cpy.ToArray(), SurvivingNails = nl.ToArray(), TrackableObjects = trk.ToArray(), BeltTrackableObjects = belt.ToArray(), WorkingSatellites = wk.ToArray() };
+        return new CascadeResult { Years = yr.ToArray(), TotalObjects = tot.ToArray(), TotalCrossSection = cs.ToArray(), CatastrophicPerYear = cpy.ToArray(), SurvivingNails = nl.ToArray(), TrackableObjects = trk.ToArray(), BeltTrackableObjects = belt.ToArray(), WorkingSatellites = wk.ToArray(), LeoEffectiveTrackable = eff.ToArray() };
     }
 }

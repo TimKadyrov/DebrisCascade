@@ -716,20 +716,11 @@ public sealed class KesslerEvolution
         if (_ecc.Count == 0) return;
         double activity = SolarActivity * (SolarCycleAmplitude == 0 ? 1.0
             : Math.Exp(SolarCycleAmplitude * Math.Sin(2 * Math.PI * _simSec / (11.0 * 365.25 * Constants.SecondsPerDay))));
-        const double muM = Constants.Mu * 1e9; const int K = 48;
         foreach (var o in _ecc)
         {
             if (double.IsNaN(o.ARate) || Math.Abs(o.A - o.ARate) > 1.0 || ++o.RateAge >= (SolarCycleAmplitude == 0 ? 36 : 6))
             {
-                double a = o.A, e = 1 - o.Rp / a, aM = a * 1000, am = _cls[o.C].AreaToMass, sum = 0, wsum = 0;
-                for (int k = 0; k < K; k++)
-                {
-                    double Ek = (k + 0.5) * Math.PI / K, w = 1 - e * Math.Cos(Ek), r = a * w;   // dM = (1 − e cos E) dE
-                    double rho = AtmosphericDrag.Density(r - Constants.EarthRadiusKm, activity);
-                    double v2 = muM * (2 / (r * 1000) - 1 / aM);
-                    sum += w * rho * Math.Pow(Math.Max(v2, 0), 1.5); wsum += w;
-                }
-                o.Rate = -(aM * aM / muM) * AtmosphericDrag.DragCoefficient * am * (sum / wsum) / 1000.0;   // km/s
+                o.Rate = AtmosphericDrag.OrbitAveragedDecayRateKmPerSec(o.A, 1 - o.Rp / o.A, _cls[o.C].AreaToMass, activity);
                 o.ARate = o.A; o.RateAge = 0;
             }
             o.A = Math.Max(o.Rp, o.A + o.Rate * dtSec);

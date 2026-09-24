@@ -59,7 +59,21 @@ public static class NasaBenchmark
             total > 0 ? at900 / total : 0, mid, byShell);
     }
 
-    public static async Task<object> ComputeAsync(string dataDir, Action<string> log)
+    /// <summary>The same projection on the cube engine: every object on its own orbit with its own mass and area,
+    /// true encounter geometry, orbit-averaged drag. Stochastic, so several seeds.</summary>
+    public static Run ProjectCube(IReadOnlyList<CatalogObject> cat, int seed, double years = 200)
+    {
+        var c = new ConjunctionCascade(seed) { LaunchRatePerYear = 0, ExplosionsPerYear = 0, RemovalsPerYear = 0, TrackedOnlyCollisions = true };
+        c.SeedFromCatalog(cat, backgroundSmallTotal: 0);
+        var r = c.Run(years, 60);
+        var byShell = c.CatastrophicByShell; double total = byShell.Sum();
+        var mid = Enumerable.Range(0, byShell.Length).Select(s => 225.0 + 50 * s).ToArray();
+        double at900 = Enumerable.Range(0, mid.Length).Where(s => mid[s] >= 900 && mid[s] < 1000).Sum(s => byShell[s]);
+        return new Run($"cube engine, seed {seed}", r.Years, r.LeoEffectiveTrackable, total, c.NonCatastrophicTrackedTotal,
+            total > 0 ? at900 / total : 0, mid, byShell);
+    }
+
+    public static async Task<object> ComputeAsync(string dataDir, Action<string> log, int cubeSeeds = 0)
     {
         log("  loading the 1 Jan 2006 catalog from Space-Track history ...");
         var cat = await LoadCatalog2006Async(dataDir);
@@ -75,6 +89,11 @@ public static class NasaBenchmark
             Project(cat, "finer masses + eccentric orbits + 11-yr solar cycle", true, Math.Log(2), 0),
             Project(cat, "model's own physics (incl. 1-10 cm field), finer masses + eccentric", false, 0, 1_000_000),
         };
+        if (cubeSeeds > 0)
+        {
+            log($"  cube engine, {cubeSeeds} seeds x 200 yr ...");
+            runs = runs.Concat(Enumerable.Range(1, cubeSeeds).AsParallel().AsOrdered().Select(s => ProjectCube(cat, s))).ToArray();
+        }
         foreach (var r in runs)
         {
             int Y(double y) => Array.FindIndex(r.Years, t => t >= y - 1e-6);
