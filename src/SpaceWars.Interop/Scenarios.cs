@@ -101,7 +101,7 @@ public static class Scenarios
                 (mass, area) = Satcat.DeriveMassArea(rec); intact = Satcat.IsIntact(rec.ObjectType); type = rec.ObjectType;
                 if (rec.RcsM2.HasValue) withRcs++;
             }
-            objs.Add(new CatalogObject(el, mass, area, intact, type));
+            objs.Add(new CatalogObject(el, mass, area, intact, type, t.Name));
         }
         var pay = objs.Where(o => o.ObjectType == "PAY").ToList();
         if (pay.Count == 0) pay = objs;

@@ -481,38 +481,86 @@ if (opts.Deck)
 // 4i. Cube-method calibration: geometric (cube) vs well-mixed (kinetic) rate.
 if (opts.Calibrate)
 {
-    Console.WriteLine("--- Cube-method calibration (geometric vs well-mixed) ---");
+    // Cube (geometric) vs well-mixed (box) collision rates on the production population: the real
+    // catalog plus the modelled 1–10 cm field, here in 200k particles (~5 objects each) to keep the
+    // cube method's variance down. The box model uses 10 km/s for every pair, so its equivalent rates
+    // are well-mixed at 10 km/s; the ratio of CATASTROPHIC rates is the one that matters for a cascade.
+    Console.WriteLine("--- Cube-method calibration (geometric vs well-mixed, production population) ---");
     double dt = 30 * 86400.0; const double secYr = 3.15576e7;
     var sw = Stopwatch.StartNew();
-    Console.WriteLine("   Fixed 20 km cubes, near-unit-weight particles; increasing temporal sampling.");
-    Console.WriteLine("   A converged (quotable) rate STABILISES as sub-samples grow (variance, not bias, is the issue).");
-    Console.WriteLine("   sub-samples | mean v_rel |  cube/yr | kinetic/yr |     k");
-
-    double lastRate = 0, lastK = 0, lastVrel = 0;
-    var rates = new List<double>();
-    foreach (int subs in new[] { 32, 96, 288 })
+    Console.WriteLine("   sub-samples | mean v_rel | cube all/yr | box all/yr | geometry | cube cat/yr | box cat/yr | cat ratio");
+    var catRates = new List<double>();
+    double kAll = 0, kCat = 0, kGeo = 0, vrLast = 0;
+    foreach (int subs in new[] { 300, 3000, 10000 })
     {
         var m = new ConjunctionCascade(seed: 1) { CubeKm = 20.0, SubSamples = subs };
-        m.SeedFromCatalog(catalogObjects, backgroundSmallTotal: 120_000, backgroundSuperParticles: 120_000, backgroundLargeTotal: 8000);
-        var (coll, vrel) = m.MeasureCubeRate(dt);
-        double kin = m.MeasureKineticRate(dt, vrel);
-        double rate = coll * secYr / dt, k = kin > 0 ? coll / kin : double.NaN;
-        rates.Add(rate); lastRate = rate; lastK = k; lastVrel = vrel;
-        Console.WriteLine($"   {subs,11} | {vrel / 1000,7:F2} km/s | {rate,8:F1} | {kin * secYr / dt,10:F1} | {k,6:F2}");
+        m.SeedFromCatalog(catalogObjects, backgroundSmallTotal: 1_000_000, backgroundSuperParticles: 200_000);
+        var (coll, vrel, cat) = m.MeasureCubeRate(dt);
+        double boxAll = m.MeasureKineticRate(dt, 10_000.0), sameSpeed = m.MeasureKineticRate(dt, vrel);
+        double boxCat = m.MeasureKineticCatastrophic(dt, 10_000.0);
+        kAll = coll / boxAll; kGeo = coll / sameSpeed; kCat = boxCat > 0 ? cat / boxCat : double.NaN; vrLast = vrel;
+        catRates.Add(cat * secYr / dt);
+        Console.WriteLine($"   {subs,11} | {vrel / 1000,6:F2} km/s | {coll * secYr / dt,11:F0} | {boxAll * secYr / dt,10:F0} | " +
+                          $"{kGeo,7:F2}x | {cat * secYr / dt,11:F2} | {boxCat * secYr / dt,10:F2} | {kCat,8:F2}x");
     }
+    double drift = catRates.Count >= 2 ? Math.Abs(catRates[^1] - catRates[^2]) / Math.Max(catRates[^2], 1e-12) : 1;
+    Console.WriteLine($"   last-step drift in the catastrophic rate {drift:P0}; ran in {sw.Elapsed.TotalSeconds:F0} s.");
+    Console.WriteLine($"   geometry: real orbit crossings give {kGeo:F2}x the well-mixed rate at the same speed, but encounters");
+    Console.WriteLine($"   average {vrLast / 1000:F1} km/s, not 10, so all collisions run {kAll:F2}x the box model's count.");
+    Console.WriteLine($"   catastrophic collisions (what drives a cascade): cube / box = {kCat:F2}x" +
+                      (drift < 0.3 ? " (converged)." : " (still settling; more sub-samples tighten it)."));
+    Console.WriteLine();
+}
 
-    double drift = rates.Count >= 2 ? Math.Abs(rates[^1] - rates[^2]) / Math.Max(rates[^2], 1e-9) : 1;
-    Console.WriteLine($"   last-step drift {drift:P0}; mean encounter speed {lastVrel / 1000:F1} km/s; ran in {sw.Elapsed.TotalSeconds:F0} s.");
-    if (drift < 0.30)
-        Console.WriteLine($"   ⇒ QUOTABLE: total collision rate stabilised at ≈{lastRate:F0}/yr for this test population ({drift:P0} drift).");
-    else
-        Console.WriteLine($"   ⇒ Still settling ({drift:P0} drift); more sub-samples / particles tighten it further.");
-    Console.WriteLine($"     Geometric rate ≈ {lastK:F1}× the full-sphere well-mixed rate — real orbits concentrate in");
-    Console.WriteLine($"     latitude/inclination bands the shell-average dilutes, so the box model UNDERcounts by");
-    Console.WriteLine($"     ~{lastK:F0}× and its near-critical result is CONSERVATIVE.");
-    Console.WriteLine($"     Caveat: mean v_rel {lastVrel / 1000:F1} km/s stays below the ~10 km/s isotropic value — co-moving");
-    Console.WriteLine($"     pairs dominate and the rare high-speed crossings that drive CATASTROPHIC events remain");
-    Console.WriteLine($"     under-sampled, so the energy-weighted (catastrophic) rate needs still more sampling.\n");
+// 4j. Where do the cube method's extra collisions come from? Rate by relative speed, real geometry vs
+// the same objects with scrambled orbital planes (same altitudes and inclinations).
+if (opts.CalibrateSpeed)
+{
+    Console.WriteLine("--- Cube-method rate by relative speed: real planes vs scrambled planes ---");
+    double dt = 30 * 86400.0; const double secYr = 3.15576e7;
+    double[] edges = { 0, 1, 2, 4, 6, 8, 10, 12, 16 };
+    var sw = Stopwatch.StartNew();
+    (double[] All, double[] Cat) Measure(bool scramble)
+    {
+        var m = new ConjunctionCascade(seed: 1) { CubeKm = 20.0, SubSamples = 3000 };
+        m.SeedFromCatalog(catalogObjects, backgroundSmallTotal: 1_000_000, backgroundSuperParticles: 200_000);
+        if (scramble) m.ScramblePlanes();
+        return m.MeasureCubeRateBySpeed(dt, edges);
+    }
+    var real = Measure(false); var ctrl = Measure(true);
+    double f = secYr / dt;
+    Console.WriteLine("   v_rel km/s |  real all/yr | real cat/yr | scrambled all/yr | scrambled cat/yr | real - scrambled");
+    for (int b = 0; b < edges.Length - 1; b++)
+        Console.WriteLine($"   {edges[b],4:F0}-{edges[b + 1],-4:F0}  | {real.All[b] * f,12:F1} | {real.Cat[b] * f,11:F2} | {ctrl.All[b] * f,16:F1} | {ctrl.Cat[b] * f,16:F2} | {(real.All[b] - ctrl.All[b]) * f,16:F1}");
+    Console.WriteLine($"   {"total",-10} | {real.All.Sum() * f,12:F1} | {real.Cat.Sum() * f,11:F2} | {ctrl.All.Sum() * f,16:F1} | {ctrl.Cat.Sum() * f,16:F2} | {(real.All.Sum() - ctrl.All.Sum()) * f,16:F1}");
+    Console.WriteLine($"   ran in {sw.Elapsed.TotalSeconds:F0} s.\n");
+}
+
+// 4k. What are the cube method's slow (< 1 km/s) encounters? Break them down by source and orbit geometry.
+if (opts.CalibrateComoving)
+{
+    Console.WriteLine("--- Cube-method slow encounters (< 1 km/s): what are they? ---");
+    double dt = 30 * 86400.0; const double secYr = 3.15576e7, f = secYr / (30 * 86400.0);
+    var sw = Stopwatch.StartNew();
+    var m = new ConjunctionCascade(seed: 1) { CubeKm = 20.0, SubSamples = 3000 };
+    m.SeedFromCatalog(catalogObjects, backgroundSmallTotal: 1_000_000, backgroundSuperParticles: 200_000);
+    double[] angEdges = { 0, 0.1, 1, 5, 20, 180 }, daEdges = { 0, 1, 5, 20, 100, 1e9 };
+    var (total, byType, byFam, ang, da) = m.MeasureSlowPairs(dt, 1.0, angEdges, daEdges);
+    Console.WriteLine($"   slow-pair collision rate: {total * f:F1} /yr");
+    void Top(string title, Dictionary<string, double> d, int n)
+    {
+        Console.WriteLine($"   {title}:");
+        foreach (var kv in d.OrderByDescending(kv => kv.Value).Take(n))
+            Console.WriteLine($"     {kv.Key,-38} {kv.Value * f,8:F2} /yr  {kv.Value / total,6:P0}");
+    }
+    Top("by source type", byType, 8);
+    Top("by name family", byFam, 12);
+    Console.WriteLine("   angle between the two orbital planes:");
+    for (int b = 0; b < ang.Length; b++) Console.WriteLine($"     {angEdges[b],5:G}–{angEdges[b + 1],-4:G} deg  {ang[b] * f,8:F2} /yr  {ang[b] / total,6:P0}");
+    Console.WriteLine("   difference in semi-major axis:");
+    string[] daLab = { "<1 km", "1–5 km", "5–20 km", "20–100 km", ">100 km" };
+    for (int b = 0; b < da.Length; b++) Console.WriteLine($"     {daLab[b],-10}  {da[b] * f,8:F2} /yr  {da[b] / total,6:P0}");
+    Console.WriteLine($"   ran in {sw.Elapsed.TotalSeconds:F0} s.\n");
 }
 
 // 5. Population-context and verdict.
@@ -566,6 +614,8 @@ file sealed class CliOptions
     public bool Calibrate;
     public bool Deck;
     public bool ActiveOnly;
+    public bool CalibrateSpeed;
+    public bool CalibrateComoving;
 
     public static CliOptions Parse(string[] args)
     {
@@ -585,6 +635,8 @@ file sealed class CliOptions
             if (a == "--calibrate") { o.Calibrate = true; continue; }
             if (a == "--deck") { o.Deck = true; continue; }
             if (a == "--active-only") { o.ActiveOnly = true; continue; }
+            if (a == "--calibrate-speed") { o.CalibrateSpeed = true; continue; }
+            if (a == "--calibrate-comoving") { o.CalibrateComoving = true; continue; }
             if (i + 1 >= args.Length) break; // remaining flags need a value
             switch (a)
             {

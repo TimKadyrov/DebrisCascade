@@ -27,8 +27,29 @@ public sealed class ConjunctionCascade
     public int CoarsenAbove { get; init; } = 120_000;
     private const int HardCap = 800_000;          // absolute object cap (memory backstop)
     private const int MaxHitsPerStep = 200_000;   // bound the per-step collision list
-    private const int MaxEventsPerPair = 16;       // bound events from one heavy super-particle pair
     public bool UsedGpu { get; private set; }
+
+    /// <summary>
+    /// Skip encounters between two catalogued payloads flying in formation — orbital planes within
+    /// <see cref="FormationPlaneDeg"/> and semi-major axes within <see cref="FormationDeltaAKm"/>, i.e.
+    /// neighbours in one constellation plane. The cube method treats objects sharing a cube as randomly
+    /// placed, but operators hold that spacing, so these aren't collision opportunities (calibration:
+    /// ~26/yr phantom encounters, 96% Starlink/OneWeb/Qianfan-type pairs). The catalog has no
+    /// active/dead flag, so dead satellites still in their slot are skipped too.
+    /// </summary>
+    public bool ExcludeFormationPairs { get; init; } = true;
+    public double FormationPlaneDeg { get; init; } = 1.0;
+    public double FormationDeltaAKm { get; init; } = 20.0;
+
+    private bool FormationNeighbours(int i, int j, double[] st)
+    {
+        if (!ExcludeFormationPairs || _tag[i] != "PAY" || _tag[j] != "PAY") return false;
+        if (Math.Abs(_els[i].SemiMajorAxis - _els[j].SemiMajorAxis) > FormationDeltaAKm) return false;
+        var hi = Vec3Cross(st[6 * i], st[6 * i + 1], st[6 * i + 2], st[6 * i + 3], st[6 * i + 4], st[6 * i + 5]);
+        var hj = Vec3Cross(st[6 * j], st[6 * j + 1], st[6 * j + 2], st[6 * j + 3], st[6 * j + 4], st[6 * j + 5]);
+        double c = (hi.X * hj.X + hi.Y * hj.Y + hi.Z * hj.Z) / (Norm(hi) * Norm(hj));
+        return Math.Acos(Math.Clamp(c, -1, 1)) * 180 / Math.PI < FormationPlaneDeg;
+    }
 
     /// <summary>Non-collision fragmentations (explosions) per year across LEO at the seeded population;
     /// intact objects (≥50 kg) explode at a per-kg rate calibrated to it. 0 disables. See KesslerEvolution.</summary>
@@ -60,6 +81,9 @@ public sealed class ConjunctionCascade
     private readonly List<OrbitalElements> _els = new();
     private readonly List<double> _epoch = new(), _mass = new(), _area = new(), _sqrtA = new(), _w = new();
     private readonly List<bool> _alive = new(), _isNail = new();
+    // Where each particle came from (catalog type PAY/R/B/DEB/UNK, BG-SMALL, BG-BELT, LAUNCH, FRAG, NAIL)
+    // and, for catalog objects, its name — for diagnostics only; physics never reads them.
+    private readonly List<string> _tag = new(), _name = new();
     private double _simSec;
 
     public ConjunctionCascade(int seed = 1) => _rng = new Random(seed);
@@ -69,8 +93,9 @@ public sealed class ConjunctionCascade
     private static double MassFromLc(double lc) => BreakupModel.FragmentMassFromLc(lc);
     private static double AreaFromLc(double lc) => BreakupModel.AreaFromLc(lc);
 
-    private void Add(OrbitalElements el, double mass, double area, double weight, bool nail)
+    private void Add(OrbitalElements el, double mass, double area, double weight, bool nail, string tag = "FRAG", string name = "")
     {
+        _tag.Add(tag); _name.Add(name);
         _els.Add(el); _epoch.Add(_simSec); _mass.Add(mass); _area.Add(area);
         _sqrtA.Add(Math.Sqrt(area)); _w.Add(weight); _alive.Add(true); _isNail.Add(nail);
     }
@@ -92,7 +117,7 @@ public sealed class ConjunctionCascade
             double alt = el.SemiMajorAxis - Constants.EarthRadiusKm;
             if (alt < minAltKm || alt > minAltKm + nShell * binKm) continue;
             bool big = _rng.NextDouble() < largeIntactFraction;
-            Add(el, big ? 2400.0 : 180.0, big ? 18.0 : 1.78, 1.0, nail: false);
+            Add(el, big ? 2400.0 : 180.0, big ? 18.0 : 1.78, 1.0, nail: false, tag: "PAY");
         }
         SeedBackground(backgroundSmallTotal, backgroundSuperParticles, backgroundLargeTotal, nShell, minAltKm, binKm);
     }
@@ -109,7 +134,7 @@ public sealed class ConjunctionCascade
         {
             double alt = o.Elements.SemiMajorAxis - Constants.EarthRadiusKm;
             if (alt < minAltKm || alt > minAltKm + nShell * binKm) continue;
-            Add(o.Elements, o.MassKg, o.AreaM2, 1.0, nail: false);
+            Add(o.Elements, o.MassKg, o.AreaM2, 1.0, nail: false, tag: o.ObjectType, name: o.Name);
         }
         SeedBackground(backgroundSmallTotal, backgroundSuperParticles, backgroundLargeTotal, nShell, minAltKm, binKm);
     }
@@ -124,24 +149,27 @@ public sealed class ConjunctionCascade
 
         for (int s = 0; s < nShell; s++)
         {
-            double f = w[s] / wsum, alt = minAltKm + (s + 0.5) * binKm;
+            double f = w[s] / wsum;
+            // Uniform in altitude across the shell (not all at mid-shell: a thin layer would pack the
+            // population into fewer cubes and inflate the geometric collision rate by construction).
+            double Alt() => minAltKm + (s + _rng.NextDouble()) * binKm;
             int sp = Math.Max(1, (int)Math.Round(backgroundSuperParticles * f));
             double smallShare = backgroundSmallTotal * f;
             for (int k = 0; k < sp; k++)
             {
                 bool coarse = _rng.NextDouble() < 0.3;
                 double lc = coarse ? lc1 : lc0;
-                Add(Circular(alt, (30 + 120 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi),
-                    MassFromLc(lc), AreaFromLc(lc), smallShare / sp, nail: false);
+                Add(Circular(Alt(), (30 + 120 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi),
+                    MassFromLc(lc), AreaFromLc(lc), smallShare / sp, nail: false, tag: "BG-SMALL");
             }
             // Large-object belt as near-unit-weight particles (not a few mega-weight ones —
             // those blow up the cube-method variance; see MeasureCubeRate calibration).
             double largeShare = backgroundLargeTotal * f;
             int nPay = (int)Math.Round(0.85 * largeShare), nRb = (int)Math.Round(0.15 * largeShare);
             for (int k = 0; k < nPay; k++)
-                Add(Circular(alt, (30 + 120 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 180.0, 1.78, 1.0, false);
+                Add(Circular(Alt(), (30 + 120 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 180.0, 1.78, 1.0, false, tag: "BG-BELT");
             for (int k = 0; k < nRb; k++)
-                Add(Circular(alt, (30 + 120 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 2400.0, 18.0, 1.0, false);
+                Add(Circular(Alt(), (30 + 120 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 2400.0, 18.0, 1.0, false, tag: "BG-BELT");
         }
     }
 
@@ -150,7 +178,7 @@ public sealed class ConjunctionCascade
         int step = Math.Max(1, nailCloud.Count / superParticles);
         int used = 0; for (int i = 0; i < nailCloud.Count; i += step) used++;
         double wp = (double)totalNails / used;
-        for (int i = 0; i < nailCloud.Count; i += step) Add(nailCloud[i], nail.MassKg, nail.MeanCrossSectionM2, wp, nail: true);
+        for (int i = 0; i < nailCloud.Count; i += step) Add(nailCloud[i], nail.MassKg, nail.MeanCrossSectionM2, wp, nail: true, tag: "NAIL");
     }
 
     public double TotalObjects() { double t = 0; for (int i = 0; i < _w.Count; i++) if (_alive[i]) t += _w[i]; return t; }
@@ -202,14 +230,27 @@ public sealed class ConjunctionCascade
         return s;
     }
 
-    private readonly struct Hit(int i, int j, bool cat, double px, double py, double pz, double vx, double vy, double vz)
-    { public readonly int I = i, J = j; public readonly bool Cat = cat; public readonly double Px = px, Py = py, Pz = pz, Vx = vx, Vy = vy, Vz = vz; }
+    /// <summary>A pair's collisions this step: <c>Events</c> of them at relative speed <c>Vrel</c>; P/V is
+    /// the parent's state, where fragments start. I == J is a self-pair within one super-particle.</summary>
+    private readonly struct Hit(int i, int j, bool cat, double vrel, double events, double px, double py, double pz, double vx, double vy, double vz)
+    {
+        public readonly int I = i, J = j; public readonly bool Cat = cat; public readonly double Vrel = vrel, Events = events;
+        public readonly double Px = px, Py = py, Pz = pz, Vx = vx, Vy = vy, Vz = vz;
+    }
 
     public double Step(double dtSec)
     {
         double L = CubeKm, Lm = L * 1000.0, Vcube = Lm * Lm * Lm;
         double dtSub = dtSec / SubSamples;
-        var hits = new List<Hit>();
+        // Hits beyond the memory cap are reservoir-sampled (a uniform random subset, later scaled back up),
+        // so the cap never favours whichever cubes the dictionary happens to enumerate first.
+        var hits = new List<Hit>(); long seen = 0;
+        void Offer(Hit h)
+        {
+            seen++;
+            if (hits.Count < MaxHitsPerStep) hits.Add(h);
+            else { long r = _rng.NextInt64(seen); if (r < MaxHitsPerStep) hits[(int)r] = h; }
+        }
 
         for (int sub = 0; sub < SubSamples; sub++)
         {
@@ -230,30 +271,44 @@ public sealed class ConjunctionCascade
 
             foreach (var lst in cubes.Values)
             {
-                if (hits.Count >= MaxHitsPerStep) break;
                 int m = lst.Count; if (m < 2) continue;
-                for (int p = 0; p < m && hits.Count < MaxHitsPerStep; p++)
+                for (int p = 0; p < m; p++)
                     for (int q = p + 1; q < m; q++)
                     {
                         int i = lst[p], j = lst[q];
                         double dvx = st[6 * i + 3] - st[6 * j + 3], dvy = st[6 * i + 4] - st[6 * j + 4], dvz = st[6 * i + 5] - st[6 * j + 5];
                         double vrel = Math.Sqrt(dvx * dvx + dvy * dvy + dvz * dvz) * 1000.0; // m/s
-                        if (vrel <= 0) continue;
+                        if (vrel <= 0 || FormationNeighbours(i, j, st)) continue;
                         double sigma = (_sqrtA[i] + _sqrtA[j]); sigma *= sigma; // m^2
                         double lam = _w[i] * _w[j] * sigma * vrel * dtSub / Vcube;
-                        int ev = Math.Min(Poisson(lam), MaxEventsPerPair);
-                        for (int e = 0; e < ev; e++)
-                        {
-                            double mt = Math.Max(_mass[i], _mass[j]), mp = Math.Min(_mass[i], _mass[j]);
-                            bool cat = Lethality.IsCatastrophic(mp, vrel, mt);
-                            int par = _mass[i] >= _mass[j] ? i : j;
-                            hits.Add(new Hit(i, j, cat, st[6 * par], st[6 * par + 1], st[6 * par + 2], st[6 * par + 3], st[6 * par + 4], st[6 * par + 5]));
-                        }
-                        if (hits.Count >= MaxHitsPerStep) break;
+                        int ev = Poisson(lam); if (ev == 0) continue;
+                        double mt = Math.Max(_mass[i], _mass[j]), mp = Math.Min(_mass[i], _mass[j]);
+                        bool cat = Lethality.IsCatastrophic(mp, vrel, mt);
+                        int par = _mass[i] >= _mass[j] ? i : j;
+                        Offer(new Hit(i, j, cat, vrel, ev, st[6 * par], st[6 * par + 1], st[6 * par + 2], st[6 * par + 3], st[6 * par + 4], st[6 * par + 5]));
                     }
             }
         }
 
+        // Collisions among the objects one super-particle stands for (weight > 1): the cube loop only
+        // pairs distinct particles, so add these well-mixed over the particle's 50 km shell at the mean
+        // LEO encounter speed, as the box and discrete engines do for same-class pairs.
+        const double selfVrel = 10_000.0;
+        for (int i = 0; i < _els.Count; i++)
+        {
+            if (!_alive[i] || _w[i] <= 1) continue;
+            var el = _els[i]; if (el.MeanMotion <= 0) continue;
+            double alt = el.SemiMajorAxis - Constants.EarthRadiusKm;
+            double rLo = (Constants.EarthRadiusKm + Math.Floor(alt / 50.0) * 50.0) * 1000.0, rHi = rLo + 50_000.0;
+            double vShell = 4.0 / 3.0 * Math.PI * (rHi * rHi * rHi - rLo * rLo * rLo);
+            double lam = 0.5 * _w[i] * (_w[i] - 1) * 4.0 * _area[i] * selfVrel * dtSec / vShell;   // sigma = (2 sqrt A)^2
+            int ev = Poisson(lam); if (ev == 0) continue;
+            el.ComputeSecularRates();
+            var (pos, vel) = el.StateAt(_simSec - _epoch[i] + _rng.NextDouble() * Constants.TwoPi / el.MeanMotion);
+            Offer(new Hit(i, i, Lethality.IsCatastrophic(_mass[i], selfVrel, _mass[i]), selfVrel, ev, pos.X, pos.Y, pos.Z, vel.X, vel.Y, vel.Z));
+        }
+
+        double scaleUp = hits.Count > 0 && seen > hits.Count ? (double)seen / hits.Count : 1.0;
         double catastrophic = 0;
         foreach (var h in hits)
         {
@@ -261,21 +316,21 @@ public sealed class ConjunctionCascade
             if (!_alive[h.I] || !_alive[h.J]) continue;
             double mt = Math.Max(_mass[h.I], _mass[h.J]), mp = Math.Min(_mass[h.I], _mass[h.J]);
             int proj = _mass[h.I] <= _mass[h.J] ? h.I : h.J;
-            double vrel = Math.Sqrt(h.Vx * h.Vx + h.Vy * h.Vy + h.Vz * h.Vz) * 1000.0; // parent speed as encounter proxy
-            // A particle carrying < 1 real object can only take part in that fraction of a
-            // collision; scale the event (removal and fragments) by it so no mass is created.
+            double events = h.Events * scaleUp;
+            // Events can't remove more objects than the particles carry; scaling fragments by the same
+            // amount keeps mass conserved. A self-pair removes two objects per event from one particle.
             double frac;
             if (h.Cat)
             {
-                frac = Math.Min(1.0, Math.Min(_w[h.I], _w[h.J]));
+                frac = h.I == h.J ? Math.Min(events, _w[h.I] / 2.0) : Math.Min(events, Math.Min(_w[h.I], _w[h.J]));
                 _w[h.I] -= frac; _w[h.J] -= frac;
                 if (_w[h.I] <= 1e-9) _alive[h.I] = false; if (_w[h.J] <= 1e-9) _alive[h.J] = false;
                 catastrophic += frac;
             }
-            else { frac = Math.Min(1.0, _w[proj]); _w[proj] -= frac; if (_w[proj] <= 1e-9) _alive[proj] = false; }
+            else { frac = Math.Min(events, _w[proj]); _w[proj] -= frac; if (_w[proj] <= 1e-9) _alive[proj] = false; }
 
-            double relForBreak = 10_000.0; // representative closing speed for the breakup spectrum
-            double meff = h.Cat ? (mt + mp) : BreakupModel.EffectiveMass(mt, mp, relForBreak);
+            // The breakup spectrum uses this encounter's own relative speed.
+            double meff = h.Cat ? (mt + mp) : BreakupModel.EffectiveMass(mt, mp, h.Vrel);
             double availMass = h.Cat ? (mt + mp) : Math.Min(mt, 50.0 * mp);
             var cc = new double[FragMass.Length];
             BreakupModel.DistributeFragments(meff, availMass, LcEdges, FragMass, cc);
@@ -352,8 +407,8 @@ public sealed class ConjunctionCascade
         _launchAccrual += LaunchRatePerYear * throttle * dtSec / secYr;
         if (_launchAccrual < 1.0) return;
         double batch = _launchAccrual; _launchAccrual = 0;
-        Add(Circular(LaunchAltKm, (45 + 45 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 180.0, 1.78, 0.85 * batch, false);
-        Add(Circular(LaunchAltKm, (45 + 45 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 2400.0, 18.0, 0.15 * batch, false);
+        Add(Circular(LaunchAltKm, (45 + 45 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 180.0, 1.78, 0.85 * batch, false, tag: "LAUNCH");
+        Add(Circular(LaunchAltKm, (45 + 45 * _rng.NextDouble()) * Constants.DegToRad, _rng.NextDouble() * Constants.TwoPi, _rng.NextDouble() * Constants.TwoPi), 2400.0, 18.0, 0.15 * batch, false, tag: "LAUNCH");
     }
 
     private static readonly double[] FragMass = Enumerable.Range(0, LcEdges.Length - 1).Select(c => MassFromLc(Math.Sqrt(LcEdges[c] * LcEdges[c + 1]))).ToArray();
@@ -424,20 +479,23 @@ public sealed class ConjunctionCascade
     {
         var acc = new Dictionary<(int, int, bool), double[]>();
         var rep = new Dictionary<(int, int, bool), OrbitalElements>();
+        var repTag = new Dictionary<(int, int, bool), (string Tag, string Name)>();
         for (int i = 0; i < _els.Count; i++)
         {
             if (!_alive[i]) continue;
             int skey = (int)((_els[i].SemiMajorAxis - Constants.EarthRadiusKm) / 50.0);
             int mkey = (int)Math.Round(Math.Log(_mass[i]) * 4);
             var key = (skey, mkey, _isNail[i]);
-            if (!acc.TryGetValue(key, out var v)) { v = new double[3]; v[1] = _mass[i]; v[2] = _area[i]; acc[key] = v; rep[key] = _els[i]; }
+            if (!acc.TryGetValue(key, out var v)) { v = new double[3]; v[1] = _mass[i]; v[2] = _area[i]; acc[key] = v; rep[key] = _els[i]; repTag[key] = (_tag[i], _name[i]); }
             v[0] += _w[i];
         }
         _els.Clear(); _epoch.Clear(); _mass.Clear(); _area.Clear(); _sqrtA.Clear(); _w.Clear(); _alive.Clear(); _isNail.Clear();
+        _tag.Clear(); _name.Clear();
         foreach (var (key, v) in acc)
         {
             _els.Add(rep[key]); _epoch.Add(_simSec); _mass.Add(v[1]); _area.Add(v[2]);
             _sqrtA.Add(Math.Sqrt(v[2])); _w.Add(v[0]); _alive.Add(true); _isNail.Add(key.Item3);
+            _tag.Add(repTag[key].Tag); _name.Add(repTag[key].Name);
         }
         Coarsened = true;
     }
@@ -448,7 +506,7 @@ public sealed class ConjunctionCascade
         for (int r = 0; r < _els.Count; r++)
         {
             if (!_alive[r]) continue;
-            if (w != r) { _els[w] = _els[r]; _epoch[w] = _epoch[r]; _mass[w] = _mass[r]; _area[w] = _area[r]; _sqrtA[w] = _sqrtA[r]; _w[w] = _w[r]; _alive[w] = true; _isNail[w] = _isNail[r]; }
+            if (w != r) { _els[w] = _els[r]; _epoch[w] = _epoch[r]; _mass[w] = _mass[r]; _area[w] = _area[r]; _sqrtA[w] = _sqrtA[r]; _w[w] = _w[r]; _alive[w] = true; _isNail[w] = _isNail[r]; _tag[w] = _tag[r]; _name[w] = _name[r]; }
             w++;
         }
         int rem = _els.Count - w;
@@ -456,6 +514,7 @@ public sealed class ConjunctionCascade
         {
             _els.RemoveRange(w, rem); _epoch.RemoveRange(w, rem); _mass.RemoveRange(w, rem); _area.RemoveRange(w, rem);
             _sqrtA.RemoveRange(w, rem); _w.RemoveRange(w, rem); _alive.RemoveRange(w, rem); _isNail.RemoveRange(w, rem);
+            _tag.RemoveRange(w, rem); _name.RemoveRange(w, rem);
         }
     }
 
@@ -463,10 +522,10 @@ public sealed class ConjunctionCascade
     /// Calibration probe: expected collisions in <paramref name="dtSec"/> and the Σλ-weighted mean
     /// encounter speed, from the cube method on the frozen current population (no removal/spawn).
     /// </summary>
-    public (double ExpectedCollisions, double MeanVrelMS) MeasureCubeRate(double dtSec)
+    public (double ExpectedCollisions, double MeanVrelMS, double ExpectedCatastrophic) MeasureCubeRate(double dtSec)
     {
         double L = CubeKm, Lm = L * 1000.0, Vcube = Lm * Lm * Lm, dtSub = dtSec / SubSamples;
-        double sumLam = 0, sumLamV = 0;
+        double sumLam = 0, sumLamV = 0, sumCat = 0;
         for (int sub = 0; sub < SubSamples; sub++)
         {
             double[] st = PropagateState(_simSec + _rng.NextDouble() * 5400.0);
@@ -488,14 +547,144 @@ public sealed class ConjunctionCascade
                         int i = lst[p], j = lst[q];
                         double dvx = st[6 * i + 3] - st[6 * j + 3], dvy = st[6 * i + 4] - st[6 * j + 4], dvz = st[6 * i + 5] - st[6 * j + 5];
                         double vrel = Math.Sqrt(dvx * dvx + dvy * dvy + dvz * dvz) * 1000.0;
-                        if (vrel <= 0) continue;
+                        if (vrel <= 0 || FormationNeighbours(i, j, st)) continue;
                         double sig = _sqrtA[i] + _sqrtA[j]; sig *= sig;
                         double lam = _w[i] * _w[j] * sig * vrel * dtSub / Vcube;
                         sumLam += lam; sumLamV += lam * vrel;
+                        if (Lethality.IsCatastrophic(Math.Min(_mass[i], _mass[j]), vrel, Math.Max(_mass[i], _mass[j]))) sumCat += lam;
                     }
             }
         }
-        return (sumLam, sumLam > 0 ? sumLamV / sumLam : 0);
+        return (sumLam, sumLam > 0 ? sumLamV / sumLam : 0, sumCat);
+    }
+
+    /// <summary>
+    /// Calibration probe: the cube method's expected collisions (all, and catastrophic) in
+    /// <paramref name="dtSec"/>, split by the encounter's relative speed into bins with the given edges
+    /// [km/s]. Frozen population: nothing is removed or spawned.
+    /// </summary>
+    public (double[] All, double[] Catastrophic) MeasureCubeRateBySpeed(double dtSec, double[] edgesKmS)
+    {
+        double L = CubeKm, Lm = L * 1000.0, Vcube = Lm * Lm * Lm, dtSub = dtSec / SubSamples;
+        var all = new double[edgesKmS.Length - 1]; var cat = new double[edgesKmS.Length - 1];
+        for (int sub = 0; sub < SubSamples; sub++)
+        {
+            double[] st = PropagateState(_simSec + _rng.NextDouble() * 5400.0);
+            var cubes = new Dictionary<long, List<int>>();
+            for (int i = 0; i < _els.Count; i++)
+            {
+                if (!_alive[i]) continue;
+                long ix = (long)Math.Floor(st[6 * i] / L) + 1024, iy = (long)Math.Floor(st[6 * i + 1] / L) + 1024, iz = (long)Math.Floor(st[6 * i + 2] / L) + 1024;
+                long key = (ix << 42) | (iy << 21) | iz;
+                if (!cubes.TryGetValue(key, out var lst)) { lst = new List<int>(); cubes[key] = lst; }
+                lst.Add(i);
+            }
+            foreach (var lst in cubes.Values)
+            {
+                int m = lst.Count; if (m < 2) continue;
+                for (int p = 0; p < m; p++)
+                    for (int q = p + 1; q < m; q++)
+                    {
+                        int i = lst[p], j = lst[q];
+                        double dvx = st[6 * i + 3] - st[6 * j + 3], dvy = st[6 * i + 4] - st[6 * j + 4], dvz = st[6 * i + 5] - st[6 * j + 5];
+                        double v = Math.Sqrt(dvx * dvx + dvy * dvy + dvz * dvz);   // km/s
+                        if (FormationNeighbours(i, j, st)) continue;
+                        int b = Array.FindLastIndex(edgesKmS, e => e <= v);
+                        if (b < 0 || b >= all.Length) continue;
+                        double sig = _sqrtA[i] + _sqrtA[j]; sig *= sig;
+                        double lam = _w[i] * _w[j] * sig * v * 1000.0 * dtSub / Vcube;
+                        all[b] += lam;
+                        if (Lethality.IsCatastrophic(Math.Min(_mass[i], _mass[j]), v * 1000.0, Math.Max(_mass[i], _mass[j]))) cat[b] += lam;
+                    }
+            }
+        }
+        return (all, cat);
+    }
+
+    /// <summary>
+    /// Diagnostic for the cube method's slow encounters: expected collisions in <paramref name="dtSec"/>
+    /// among pairs slower than <paramref name="maxVrelKmS"/>, broken down by source-tag pair, by name
+    /// family pair (first word of the catalog name, e.g. STARLINK), by the angle between the two orbital
+    /// planes, and by the difference in semi-major axis. Frozen population. Unfiltered: formation
+    /// neighbours are included, so this shows what <see cref="ExcludeFormationPairs"/> removes.
+    /// </summary>
+    public (double Total, Dictionary<string, double> ByType, Dictionary<string, double> ByFamily,
+            double[] PlaneAngleHist, double[] DeltaAHist) MeasureSlowPairs(double dtSec, double maxVrelKmS,
+            double[] planeAngleEdgesDeg, double[] deltaAEdgesKm)
+    {
+        double L = CubeKm, Lm = L * 1000.0, Vcube = Lm * Lm * Lm, dtSub = dtSec / SubSamples;
+        var byType = new Dictionary<string, double>(); var byFam = new Dictionary<string, double>();
+        var ang = new double[planeAngleEdgesDeg.Length - 1]; var dA = new double[deltaAEdgesKm.Length - 1];
+        double total = 0;
+        static string Family(string tag, string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return tag;
+            var first = name.Trim().ToUpperInvariant().Split(new[] { ' ', '-', '(', '/' }, StringSplitOptions.RemoveEmptyEntries);
+            string f = first.Length > 0 ? first[0] : tag;
+            return tag == "DEB" ? f + " DEB" : f;
+        }
+        static string PairKey(string a, string b) => string.CompareOrdinal(a, b) <= 0 ? $"{a} + {b}" : $"{b} + {a}";
+        static int Bin(double[] edges, double x) { int b = Array.FindLastIndex(edges, e => e <= x); return b >= edges.Length - 1 ? edges.Length - 2 : b; }
+
+        for (int sub = 0; sub < SubSamples; sub++)
+        {
+            double[] st = PropagateState(_simSec + _rng.NextDouble() * 5400.0);
+            var cubes = new Dictionary<long, List<int>>();
+            for (int i = 0; i < _els.Count; i++)
+            {
+                if (!_alive[i]) continue;
+                long ix = (long)Math.Floor(st[6 * i] / L) + 1024, iy = (long)Math.Floor(st[6 * i + 1] / L) + 1024, iz = (long)Math.Floor(st[6 * i + 2] / L) + 1024;
+                long key = (ix << 42) | (iy << 21) | iz;
+                if (!cubes.TryGetValue(key, out var lst)) { lst = new List<int>(); cubes[key] = lst; }
+                lst.Add(i);
+            }
+            foreach (var lst in cubes.Values)
+            {
+                int m = lst.Count; if (m < 2) continue;
+                for (int p = 0; p < m; p++)
+                    for (int q = p + 1; q < m; q++)
+                    {
+                        int i = lst[p], j = lst[q];
+                        double dvx = st[6 * i + 3] - st[6 * j + 3], dvy = st[6 * i + 4] - st[6 * j + 4], dvz = st[6 * i + 5] - st[6 * j + 5];
+                        double v = Math.Sqrt(dvx * dvx + dvy * dvy + dvz * dvz);   // km/s
+                        if (v <= 0 || v >= maxVrelKmS) continue;
+                        double sig = _sqrtA[i] + _sqrtA[j]; sig *= sig;
+                        double lam = _w[i] * _w[j] * sig * v * 1000.0 * dtSub / Vcube;
+                        total += lam;
+                        string tk = PairKey(_tag[i], _tag[j]), fk = PairKey(Family(_tag[i], _name[i]), Family(_tag[j], _name[j]));
+                        byType[tk] = byType.GetValueOrDefault(tk) + lam;
+                        byFam[fk] = byFam.GetValueOrDefault(fk) + lam;
+                        // angle between the orbit normals h = r × v, from the sampled states
+                        Vec3 H(int k) => Vec3Cross(st[6 * k], st[6 * k + 1], st[6 * k + 2], st[6 * k + 3], st[6 * k + 4], st[6 * k + 5]);
+                        var hi = H(i); var hj = H(j);
+                        double c = (hi.X * hj.X + hi.Y * hj.Y + hi.Z * hj.Z) / (Norm(hi) * Norm(hj));
+                        ang[Bin(planeAngleEdgesDeg, Math.Acos(Math.Clamp(c, -1, 1)) * 180 / Math.PI)] += lam;
+                        dA[Bin(deltaAEdgesKm, Math.Abs(_els[i].SemiMajorAxis - _els[j].SemiMajorAxis))] += lam;
+                    }
+            }
+        }
+        return (total, byType, byFam, ang, dA);
+    }
+
+    private static Vec3 Vec3Cross(double rx, double ry, double rz, double vx, double vy, double vz)
+        => new(ry * vz - rz * vy, rz * vx - rx * vz, rx * vy - ry * vx);
+    private static double Norm(Vec3 a) => Math.Sqrt(a.X * a.X + a.Y * a.Y + a.Z * a.Z);
+
+    /// <summary>
+    /// Control for calibration: give every object a random orbital plane orientation (node) and a
+    /// random position along its orbit, keeping altitude, eccentricity and inclination. This breaks up
+    /// families that share planes (constellations, sun-synchronous orbits) but keeps the latitude
+    /// structure that inclinations create.
+    /// </summary>
+    public void ScramblePlanes()
+    {
+        for (int i = 0; i < _els.Count; i++)
+        {
+            var el = _els[i];
+            el.Raan = _rng.NextDouble() * Constants.TwoPi;
+            el.MeanAnomaly = _rng.NextDouble() * Constants.TwoPi;
+            _els[i] = el;
+        }
     }
 
     /// <summary>Well-mixed (kinetic) expected collisions for the frozen population, mean-altitude shells.</summary>
@@ -519,6 +708,42 @@ public sealed class ConjunctionCascade
         double total = 0;
         for (int s = 0; s < nShell; s++)
             if (V[s] > 0) total += vrelMS / V[s] * (sumW[s] * sumWA[s] + sumWsqrtA[s] * sumWsqrtA[s]) * dtSec;
+        return total;
+    }
+
+    /// <summary>
+    /// Well-mixed expected <i>catastrophic</i> collisions for the frozen population at one encounter
+    /// speed — what the box model counts (it uses 10 km/s for every pair). Particles are grouped by
+    /// (shell, mass, area) so the pair sum stays small.
+    /// </summary>
+    public double MeasureKineticCatastrophic(double dtSec, double vrelMS, int nShell = 36, double minAlt = 200, double binKm = 50)
+    {
+        const double reM = 6_378_135.0;
+        var groups = new Dictionary<(int S, double M, double A), double>();
+        for (int i = 0; i < _els.Count; i++)
+        {
+            if (!_alive[i]) continue;
+            int s = (int)((_els[i].SemiMajorAxis - Constants.EarthRadiusKm - minAlt) / binKm);
+            if (s < 0 || s >= nShell) continue;
+            var key = (s, _mass[i], _area[i]);
+            groups[key] = groups.GetValueOrDefault(key) + _w[i];
+        }
+        double total = 0;
+        foreach (var shell in groups.GroupBy(kv => kv.Key.S))
+        {
+            double rLo = reM + (minAlt + shell.Key * binKm) * 1000, rHi = rLo + binKm * 1000;
+            double V = 4.0 / 3.0 * Math.PI * (rHi * rHi * rHi - rLo * rLo * rLo);
+            var g = shell.ToArray();
+            for (int a = 0; a < g.Length; a++)
+                for (int b = a; b < g.Length; b++)
+                {
+                    double mt = Math.Max(g[a].Key.M, g[b].Key.M), mp = Math.Min(g[a].Key.M, g[b].Key.M);
+                    if (!Lethality.IsCatastrophic(mp, vrelMS, mt)) continue;
+                    double sig = Math.Sqrt(g[a].Key.A) + Math.Sqrt(g[b].Key.A); sig *= sig;
+                    double pairs = a == b ? 0.5 * g[a].Value * g[a].Value : g[a].Value * g[b].Value;
+                    total += pairs * sig * vrelMS / V * dtSec;
+                }
+        }
         return total;
     }
 

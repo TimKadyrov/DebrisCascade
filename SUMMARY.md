@@ -48,7 +48,7 @@ LEO is strongly stratified by altitude, and almost every conclusion flips with i
   per-satellite risk peaks there at ~0.5% a year: the worst in LEO, but well below the ~2% a year
   at which operators abandon a band, and satellites fly there now.
 - **The belt already grows on its own — slowly.** With no launches at all, its ≥10 cm population
-  grows ~36% over 50 years (box ×1.36; the stochastic engines' 8-seed means are ×1.10 and ×1.25).
+  grows ~36% over 50 years (box ×1.36; the stochastic engines' 8-seed means are ×1.21 and ×1.18).
   Explosions set that rate: ×1.15 without them, ×2.1 if every one were a large stage blast. This
   matches NASA's LEGEND finding that LEO debris keeps growing even without new launches. Growing
   is not doomed: even if the per-satellite risk grew as fast as the ≥10 cm belt, it would reach
@@ -84,8 +84,15 @@ The belt is not doomed; it is a maintenance problem whose size is set by launch 
   fragments' cratering impacts throw off new debris changes the 1–10 cm results 2–3×, but barely
   moves the ≥10 cm belt. Both are reported.
 - **Not modelled.** Degradation debris (paint flakes, insulation), station-keeping and collision
-  avoidance, the solar cycle. The modelled 1–10 cm field still thins over
+  avoidance (beyond constellation formation-keeping), the solar cycle. The modelled 1–10 cm field still thins over
   the horizon, which is why the ≥10 cm population, not the raw total, is the headline metric.
+- **The engines agree.** Calibrated on the real catalog's orbit geometry (10,000 snapshots), the
+  cube method's collision rate matches the box model's within ~5%, both overall (1.01×) and for
+  catastrophic collisions (0.96×). Real geometry shifts some encounters from head-on to shallow
+  crossings but barely changes the totals. One artifact had to go first: satellites flying in
+  formation in one constellation plane (Starlink, OneWeb, …) share cubes without ever closing on
+  each other, and the cube method counted ~26 phantom encounters a year among them; those pairs
+  are now excluded.
 - **Stochastic engines are noisy.** Single discrete or cube runs range ×0.8–×1.8 for the belt;
   quote their 8-seed means.
 - **Scope.** Results are order-of-magnitude estimates from a stylised model, not operational

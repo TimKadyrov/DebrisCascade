@@ -7,9 +7,10 @@ numbers instead of intuition.
 
 **Headline finding.** A single barrel of nails is a mission-kill weapon and a persistent
 nuisance at high altitude, but it does **not** trigger Kessler syndrome or render LEO
-unusable. LEO's debris belt (~800–1000 km) is *already near-critical*; whether it runs away
-is governed by **launch and removal policy**, against which a barrel of nails is a rounding
-error (~hundreds of barrels / thousands of tonnes would be needed even to nudge a band).
+unusable. LEO's debris belt (700–1,100 km) *already grows slowly on its own*; whether it runs
+away is governed by **launch and removal policy**, against which a barrel of nails is a
+rounding error (no number of barrels doubles the belt's ≥10 cm population in 50 years; ~10
+removals a year hold it flat).
 
 See **[SUMMARY.md](SUMMARY.md)** for a plain-language write-up, including the altitude analysis.
 
@@ -31,7 +32,7 @@ CelesTrak TLEs → CUDA J2 propagation → collision flux (spatial density)
 | `SpaceWars.Native` | CUDA C++ engine (`spacewars_cuda.cu`) — batch J2 propagation + time-averaged density; built to `spacewars_cuda.dll` |
 | `SpaceWars.Interop` | P/Invoke bindings (`Cuda`) + the tier-3 conjunction cascade |
 | `SpaceWars.Cli` | Assessment CLI and scenario runners |
-| `SpaceWars.Tests` | 26 physics/GPU validation tests |
+| `SpaceWars.Tests` | 52 physics/GPU validation tests |
 
 ## Build & run
 
@@ -46,7 +47,7 @@ dotnet test
 dotnet run --project src/SpaceWars.Cli
 
 # Optional: fuller per-object RCS via Space-Track (falls back to CelesTrak if unset)
-export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # credentials read from the env only
+export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # or a generic Windows credential named SPACETRACK
 ```
 
 ### CLI flags
@@ -59,13 +60,14 @@ export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # credentials read 
 | `--cascade` | discrete super-particle cascade |
 | `--conjunction` | tier-3 Cube-method cascade (real orbit-crossing geometry) |
 | `--launch <n/yr> --launch-alt <km>` | ongoing launch traffic (the Kessler driver) |
-| `--responsive [--loss-tol <frac>]` | economically rational launch (self-limiting) |
+| `--responsive [--loss-tol <frac>]` | economically rational launch (operators throttle, then quit) |
 | `--tipping` | launch-rate sweep and break-even rate |
 | `--barrel-threshold` | how many barrels tip a band |
-| `--calibrate` | cube-method rate calibration (geometric vs well-mixed) |
+| `--calibrate` | cube vs box collision rates (all and catastrophic) on the production population |
 | `--charts` / `--export <file>` | write data for the visualizations |
 | `--deck` | every number the presentation quotes → `data/deck_numbers.json` (charts: `viz/render_deck_charts.py`) |
 | `--active-only` | use CelesTrak's active satellites instead of the full Space-Track on-orbit catalog |
+| `--calibrate-speed` / `--calibrate-comoving` | cube rate by encounter speed (real vs scrambled planes); what the slow pairs are |
 
 ## Visualizations
 
@@ -80,7 +82,7 @@ export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # credentials read 
 - Debris altitude profile is a stylized ORDEM/MASTER-like distribution (peak ~850 km);
   seeding it correctly is essential — tying it to the payload catalog understates Kessler.
 - Catalog: with Space-Track credentials, every object on orbit (payloads, rocket bodies,
-  catalogued debris — ~28,700 in LEO); otherwise CelesTrak's active satellites plus a modelled
+  catalogued debris — ~29,800 in LEO); otherwise CelesTrak's active satellites plus a modelled
   large-object belt. A modelled ~1M-object 1–10 cm field is added either way.
 - Object masses/areas come from SATCAT: RCS as cross-section (CelesTrak numeric, or Space-Track
   RCS_SIZE categories). Payloads and rocket bodies get intact masses (bulk-density law);
@@ -94,9 +96,11 @@ export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # credentials read 
 - Active debris removal: `RemovalsPerYear` takes large intact objects out of orbit, highest
   mass × collision rate first (the LEGEND selection criterion); `--deck` reports how many a year
   hold the belt flat. Both explosion and removal rates are fields in the WPF tool.
-- Box model uses a well-mixed shell assumption; the conjunction Cube method is geometrically
-  faithful (real cross-shell crossings) BUT `--calibrate` shows its *absolute* rate is
-  cube-size-dependent with super-particles (λ∝1/V_cube variance), so it is **not quotable** as
-  implemented — use the box model for rates and the conjunction model for geometry. Converging
-  it needs near-unit-weight particles (~10⁶ objects, feasible on the GPU). The discrete and cube
-  engines are stochastic: quote seed ensembles, not single runs.
+- Box model uses a well-mixed shell assumption at 10 km/s. The conjunction Cube method uses real
+  orbit geometry; `--calibrate` compares the two on the production population and they agree
+  within ~5% (all collisions 1.01×, catastrophic 0.96× at 10,000 snapshots). The cube engine
+  skips encounters between catalogued payloads flying in formation (planes within 1°, semi-major
+  axes within 20 km: constellation neighbours), which it would otherwise count as ~26 phantom
+  collisions a year; `--calibrate-comoving` shows what those pairs are and `--calibrate-speed`
+  breaks the rate down by encounter speed. The discrete and cube engines are stochastic: quote
+  seed ensembles, not single runs.

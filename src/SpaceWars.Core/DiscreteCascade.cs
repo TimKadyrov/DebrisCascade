@@ -148,6 +148,12 @@ public sealed class DiscreteCascade
         SeedBackground(backgroundSmallTotal, backgroundSuperParticles, backgroundLargeTotal);
     }
 
+    private static double RevPerDay(double altKm)
+    {
+        double a = Constants.EarthRadiusKm + altKm;
+        return Math.Sqrt(Constants.Mu / (a * a * a)) * Constants.SecondsPerDay / Constants.TwoPi;
+    }
+
     private void SeedBackground(double backgroundSmallTotal, int backgroundSuperParticles, double backgroundLargeTotal)
     {
         double lc0 = Math.Sqrt(LcEdges[0] * LcEdges[1]), lc1 = Math.Sqrt(LcEdges[1] * LcEdges[2]);
@@ -155,7 +161,9 @@ public sealed class DiscreteCascade
         for (int s = 0; s < _nShell; s++) { w[s] = DebrisEnvironment.SpatialWeight(_minAlt + (s + 0.5) * _binKm); wsum += w[s]; }
         if (wsum <= 0) return;
 
-        OrbitalElements RandEl(double rev) => OrbitalElements.FromMeanMotionRevPerDay(rev, 0.001,
+        // Each object at a uniform altitude across its shell (not all at mid-shell).
+        OrbitalElements RandEl(int shell) => OrbitalElements.FromMeanMotionRevPerDay(
+            RevPerDay(_minAlt + (shell + _rng.NextDouble()) * _binKm), 0.001,
             (30 + 120 * _rng.NextDouble()) * Constants.DegToRad,
             _rng.NextDouble() * Constants.TwoPi, 0, _rng.NextDouble() * Constants.TwoPi);
 
@@ -173,14 +181,14 @@ public sealed class DiscreteCascade
                 {
                     bool coarse = _rng.NextDouble() < 0.3;
                     double lc = coarse ? lc1 : lc0;
-                    Add(RandEl(rev), MassFromLc(lc), AreaFromLc(lc), smallShare / sp, nail: false);
+                    Add(RandEl(s), MassFromLc(lc), AreaFromLc(lc), smallShare / sp, nail: false);
                 }
 
             double largeShare = backgroundLargeTotal * f;
             if (largeShare > 1e-6)
             {
-                Add(RandEl(rev), 180.0, 1.78, 0.85 * largeShare, nail: false);
-                Add(RandEl(rev), 2400.0, 18.0, 0.15 * largeShare, nail: false);
+                Add(RandEl(s), 180.0, 1.78, 0.85 * largeShare, nail: false);
+                Add(RandEl(s), 2400.0, 18.0, 0.15 * largeShare, nail: false);
             }
         }
     }
