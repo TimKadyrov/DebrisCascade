@@ -65,7 +65,8 @@ LEO is strongly stratified by altitude, and almost every conclusion flips with i
   and intact objects centuries. It is where the real debris belt lives (the Fengyun-1C,
   Cosmos–Iridium and Cosmos-1408 clouds, Envisat, decades of rocket bodies). Today the
   per-satellite risk peaks there at ~0.5% a year: the worst in LEO, but well below the ~2% a year
-  at which operators abandon a band, and satellites fly there now.
+  at which operators abandon a band, and satellites fly there now. NASA's LEGEND model puts ~60%
+  of future catastrophic collisions at 900–1,000 km (Liou & Johnson 2006).
 - **The belt already grows on its own — slowly.** With no launches at all, its ≥10 cm population
   grows ~36% over 50 years (box ×1.36; the stochastic engines' 8-seed means are ×1.21 and ×1.18).
   Explosions set that rate: ×1.15 without them, ×2.1 if every one were a large stage blast. This
