@@ -125,3 +125,22 @@ ax.set_xlabel("months after the breakup", fontsize=8.5); ax.set_ylabel("extra ri
 rel = ex[0] / (L["baselineHazard"][0] * 100) * 100   # ex is already in %/yr
 ax.text(1, ex[0] * 1.02, f"+{ex[0]:.3f}%/yr (+{rel:.0f}%)", fontsize=8.5, color=GREEN, weight="bold", va="bottom")
 save(f, "deck_lowevent.png")
+
+# --- Removal slide: belt growth vs removals/yr ---------------------------------------------
+R = D["removal"]; rr = np.array(R["removalsPerYear"])
+f, ax = fig(11.56, 3.89, [0.075, 0.16, 0.90, 0.78])
+ax.axhline(1, color=MUTE, lw=1, ls=(0, (4, 3)))
+ax.plot(rr, R["beltGrowthAt50Launches"], color=RED, lw=2.6, marker="o", ms=4, label="50 launches/yr into the belt")
+ax.plot(rr, R["beltGrowthNoLaunches"], color=GREEN, lw=2.6, marker="o", ms=4, label="no launches")
+ax.set_xlim(0, 100); ax.set_ylim(0, max(R["beltGrowthAt50Launches"]) * 1.12)
+ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"×{v:g}"))
+ax.set_xlabel("large derelicts removed per year (riskiest first)", fontsize=10)
+ax.set_ylabel("belt objects ≥10 cm after 50 yr", fontsize=9.5); ax.tick_params(labelsize=9)
+for x, y, c, lab, dy in [(R["toHoldFlatNoLaunches"], 1, GREEN, f"~{R['toHoldFlatNoLaunches']:.0f}/yr holds it flat", -0.4),
+                         (R["toHoldFlatAt50Launches"], 1, RED, f"~{R['toHoldFlatAt50Launches']:.0f}/yr with 50 launches/yr", 0.95)]:
+    ax.plot([x], [y], "o", ms=9, mfc="white", mec=c, mew=2, zorder=5)
+    ax.annotate(lab, (x, y), xytext=(x + 3, y + dy), fontsize=9.5, color=c, weight="bold",
+                arrowprops=dict(arrowstyle="-", color=c, lw=0.7))
+ax.text(99, 1.04, "×1 = held flat", color=MUTE, fontsize=8.5, ha="right", va="bottom")
+ax.legend(loc="upper right", fontsize=9, frameon=False)
+save(f, "deck_removal.png")
