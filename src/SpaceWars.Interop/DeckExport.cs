@@ -152,6 +152,22 @@ public static class DeckExport
             };
         }
 
+        // --- explosion-rate sensitivity: zero-launch baseline at 0, 4 (default) and 10 explosions/yr ---
+        log("  explosion-rate sensitivity ...");
+        var explosions = new[] { (0.0, 0.25), (4.0, 0.25), (10.0, 0.25), (4.0, 1.0) }.Select(x =>
+        {
+            var (rate, scale) = x;
+            var m = new KesslerEvolution(nail) { ExplosionsPerYear = rate, ExplosionScale = scale }; m.SeedFromCatalog(cat);
+            var r = m.Run(Horizon, Dt);
+            return new
+            {
+                perYear = rate, scale, explosions = m.ExplosionsTotal,
+                growthAll = r.TotalObjects[^1] / r.TotalObjects[0],
+                growthTrackable = r.TrackableObjects[^1] / r.TrackableObjects[0],
+                growthBelt = r.BeltTrackableObjects[^1] / r.BeltTrackableObjects[0],
+            };
+        }).ToArray();
+
         // --- per-satellite hazard by altitude (0 launches), and drag persistence ---
         log("  hazard by altitude & persistence ...");
         var hz = Box(0);
@@ -200,6 +216,7 @@ public static class DeckExport
         return new
         {
             generatedUtc = DateTime.UtcNow, horizonYears = Horizon, beltAltKm = BeltAltKm, nailsPerBarrel,
+            explosionsPerYear = new KesslerEvolution(nail).ExplosionsPerYear, explosionScale = new KesslerEvolution(nail).ExplosionScale, explosionSensitivity = explosions,
             catalog, physics, conventions = perConv, usability, lowEvent,
             ensembles = new { discreteAll = dis, conjunctionAll = con, discreteTrackable = disT, conjunctionTrackable = conT, discreteBelt = disB, conjunctionBelt = conB },
         };

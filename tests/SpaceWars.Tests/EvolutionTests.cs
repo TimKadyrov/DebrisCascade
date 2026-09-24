@@ -42,6 +42,22 @@ public class EvolutionTests
     }
 
     [Fact]
+    public void Explosions_HitTheCalibratedRate_AndFeedSmallDebris()
+    {
+        var cat = SynthCatalog(4000, 700, 1000);
+        var withEx = new KesslerEvolution(new NailSpec()) { ExplosionsPerYear = 4, ExplosionScale = 1.0 };
+        var noEx = new KesslerEvolution(new NailSpec()) { ExplosionsPerYear = 0 };
+        withEx.SeedFromCatalog(cat); noEx.SeedFromCatalog(cat);
+        var a = withEx.Run(horizonYears: 10, dtDays: 10);
+        var b = noEx.Run(horizonYears: 10, dtDays: 10);
+
+        // ~4 a year at the seeded population (drag slowly thins the intacts, so a little under 40).
+        Assert.InRange(withEx.ExplosionsTotal, 30, 41);
+        Assert.Equal(0, noEx.ExplosionsTotal);
+        Assert.True(a.TotalObjects[^1] > b.TotalObjects[^1] + 50_000, "explosions should add small debris");
+    }
+
+    [Fact]
     public void Run_EndsExactlyOnTheHorizon()
     {
         var m = new KesslerEvolution(new NailSpec());

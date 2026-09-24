@@ -85,8 +85,12 @@ export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # credentials read 
 - Object masses/areas come from SATCAT: RCS as cross-section (CelesTrak numeric, or Space-Track
   RCS_SIZE categories). Payloads and rocket bodies get intact masses (bulk-density law);
   debris and breakup fragments get the NASA breakup model's own area-to-mass ratios.
-- The headline metric is objects ≥10 cm (all LEO and the 700–1,100 km belt). The 1–10 cm field
-  has no source term except collisions (no explosions), so raw totals drain over time.
+- The headline metric is objects ≥10 cm (all LEO and the 700–1,100 km belt).
+- Explosions (non-collision fragmentations of rocket bodies and derelicts) are a source term in all
+  three engines: `ExplosionsPerYear` (default 4/yr at the seeded population, then scaling with the
+  intact mass) and the breakup model's explosion law N(>Lc) = 6·S·Lc^-1.6 with `ExplosionScale`
+  S = 0.25 (~60 fragments ≥10 cm per event, the average event; S = 1 is a large rocket-stage
+  explosion). `--deck` reports the sensitivity to both.
 - Box model uses a well-mixed shell assumption; the conjunction Cube method is geometrically
   faithful (real cross-shell crossings) BUT `--calibrate` shows its *absolute* rate is
   cube-size-dependent with super-particles (λ∝1/V_cube variance), so it is **not quotable** as

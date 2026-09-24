@@ -118,7 +118,35 @@ public static class BreakupModel
         ReadOnlySpan<double> edges, ReadOnlySpan<double> binMassKg, Span<double> counts)
     {
         counts.Clear();
-        if (meffKg <= 0 || availMassKg <= 0) return;
+        if (meffKg <= 0) return;
+        Distribute(lc => CountLargerThan(meffKg, lc), availMassKg, edges, binMassKg, counts);
+    }
+
+    /// <summary>
+    /// Cumulative number of fragments ≥ Lc from an <b>explosion</b> (the breakup model's explosion
+    /// branch): N(&gt;Lc) = 6·S·Lc^-1.6 — independent of mass, with S a unitless type factor
+    /// (1 for a typical rocket upper stage; smaller for battery or minor breakups).
+    /// </summary>
+    public static double ExplosionCountLargerThan(double lcMeters, double scale = 1.0)
+        => 6.0 * scale * Math.Pow(lcMeters, -1.6);
+
+    /// <summary>
+    /// Mass-limited fragment counts per size bin for an explosion of a <paramref name="parentMassKg"/>
+    /// object — the same smallest-bins-first fill as <see cref="DistributeFragments"/>, with the
+    /// explosion size law.
+    /// </summary>
+    public static void DistributeExplosionFragments(double parentMassKg, ReadOnlySpan<double> edges,
+        ReadOnlySpan<double> binMassKg, Span<double> counts, double scale = 1.0)
+    {
+        counts.Clear();
+        if (scale <= 0) return;
+        Distribute(lc => ExplosionCountLargerThan(lc, scale), parentMassKg, edges, binMassKg, counts);
+    }
+
+    private static void Distribute(Func<double, double> countLargerThan, double availMassKg,
+        ReadOnlySpan<double> edges, ReadOnlySpan<double> binMassKg, Span<double> counts)
+    {
+        if (availMassKg <= 0) return;
 
         // Sub-centimetre mass, integrated over log-spaced sub-bins with fragment masses.
         double used = 0;
@@ -127,13 +155,13 @@ public static class BreakupModel
         for (int k = 0; k < sub; k++)
         {
             double l1 = Math.Exp(lnLo + (lnHi - lnLo) * k / sub), l2 = Math.Exp(lnLo + (lnHi - lnLo) * (k + 1) / sub);
-            used += (CountLargerThan(meffKg, l1) - CountLargerThan(meffKg, l2)) * FragmentMassFromLc(Math.Sqrt(l1 * l2));
+            used += (countLargerThan(l1) - countLargerThan(l2)) * FragmentMassFromLc(Math.Sqrt(l1 * l2));
         }
         if (used >= availMassKg) return;
 
         for (int c = 0; c < binMassKg.Length; c++)
         {
-            double n = CountLargerThan(meffKg, edges[c]) - CountLargerThan(meffKg, edges[c + 1]);
+            double n = countLargerThan(edges[c]) - countLargerThan(edges[c + 1]);
             if (n <= 0) continue;
             double m = n * binMassKg[c];
             if (used + m <= availMassKg) { counts[c] = n; used += m; continue; }

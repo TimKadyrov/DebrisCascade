@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace SpaceWars.Core;
 
@@ -36,6 +37,14 @@ public sealed class DiscreteCascade
     public double SolarActivity { get; init; } = 1.0;
     public double FragmentDeltaVKmS { get; init; } = 0.1; // per-axis breakup Δv spread
     public int MaxObjects { get; init; } = 150_000;       // coarsening trigger (see below)
+
+    /// <summary>Non-collision fragmentations (explosions) per year across LEO at the seeded population;
+    /// intact objects (≥50 kg) explode at a per-kg rate calibrated to it. 0 disables. See KesslerEvolution.</summary>
+    public double ExplosionsPerYear { get; init; } = 4.0;
+    public double ExplosionScale { get; init; } = 0.25;
+    private const double IntactMinMassKg = 50.0;
+    private double _explPerKgSec = -1;
+    public double ExplosionsTotal { get; private set; }
 
     /// <summary>Ongoing launch traffic: intact objects added per year (the Kessler driver).</summary>
     public double LaunchRatePerYear { get; set; } = 0.0;
@@ -290,10 +299,11 @@ public sealed class DiscreteCascade
 
                 double meff = cat ? (mt + mp) : BreakupModel.EffectiveMass(mt, mp, RelVelMetersPerSec);
                 double availMass = cat ? (mt + mp) : Math.Min(mt, 50.0 * mp);
-                SpawnFragments(parent, meff, availMass, frac);
+                SpawnFragments(parent, CollisionCounts(meff, availMass), frac);
             }
         }
 
+        ApplyExplosions(dtSec);
         DragStep(dtSec);
         ApplyLaunch(dtSec);
         return catastrophic;
@@ -343,7 +353,40 @@ public sealed class DiscreteCascade
         return lo;
     }
 
-    private void SpawnFragments(int parent, double meff, double availMass, double eventFraction)
+    private static readonly double[] FragMass = Enumerable.Range(0, LcEdges.Length - 1).Select(c => MassFromLc(Math.Sqrt(LcEdges[c] * LcEdges[c + 1]))).ToArray();
+    private static readonly double[] FragArea = Enumerable.Range(0, LcEdges.Length - 1).Select(c => AreaFromLc(Math.Sqrt(LcEdges[c] * LcEdges[c + 1]))).ToArray();
+
+    private static double[] CollisionCounts(double meff, double availMass)
+    { var cnt = new double[FragMass.Length]; BreakupModel.DistributeFragments(meff, availMass, LcEdges, FragMass, cnt); return cnt; }
+
+    /// <summary>Explosions this step: Poisson events on intact objects weighted by weight·mass.</summary>
+    private void ApplyExplosions(double dtSec)
+    {
+        if (ExplosionsPerYear <= 0) return;
+        var idx = new List<int>(); var cum = new List<double>(); double acc = 0;
+        for (int i = 0; i < _w.Count; i++)
+        {
+            if (!_alive[i] || _isNail[i] || _mass[i] < IntactMinMassKg) continue;
+            acc += _w[i] * _mass[i]; idx.Add(i); cum.Add(acc);
+        }
+        if (_explPerKgSec < 0) _explPerKgSec = acc > 0 ? ExplosionsPerYear / (365.25 * Constants.SecondsPerDay) / acc : 0;
+        if (_explPerKgSec <= 0 || acc <= 0) return;
+        int k = Poisson(_explPerKgSec * acc * dtSec);
+        var cumArr = cum.ToArray();
+        for (int e = 0; e < k && _w.Count < HardCap; e++)
+        {
+            int p = idx[PickWeighted(cumArr, acc)];
+            if (!_alive[p]) continue;
+            double frac = Math.Min(1.0, _w[p]);
+            var cnt = new double[FragMass.Length];
+            BreakupModel.DistributeExplosionFragments(_mass[p], LcEdges, FragMass, cnt, ExplosionScale);
+            SpawnFragments(p, cnt, frac);
+            _w[p] -= frac; if (_w[p] <= 1e-9) _alive[p] = false;
+            ExplosionsTotal += frac;
+        }
+    }
+
+    private void SpawnFragments(int parent, double[] cnt, double eventFraction)
     {
         var pel = new OrbitalElements
         {
@@ -355,16 +398,7 @@ public sealed class DiscreteCascade
         double period = Constants.TwoPi / pel.MeanMotion;
         var (pos, vel) = pel.StateAt(_rng.NextDouble() * period);
 
-        // mass-limited fragment counts per size class (small bins filled first)
-        int nc = LcEdges.Length - 1;
-        Span<double> cnt = stackalloc double[nc]; Span<double> mcls = stackalloc double[nc]; Span<double> acls = stackalloc double[nc];
-        for (int c = 0; c < nc; c++)
-        {
-            double lc = Math.Sqrt(LcEdges[c] * LcEdges[c + 1]);
-            mcls[c] = MassFromLc(lc); acls[c] = AreaFromLc(lc);
-        }
-        BreakupModel.DistributeFragments(meff, availMass, LcEdges, mcls, cnt);
-
+        int nc = cnt.Length;
         for (int c = 0; c < nc && _w.Count < HardCap; c++)
         {
             double weight = cnt[c] * eventFraction;
@@ -372,7 +406,7 @@ public sealed class DiscreteCascade
             var dv = new Vec3(FragmentDeltaVKmS * NextGaussian(), FragmentDeltaVKmS * NextGaussian(), FragmentDeltaVKmS * NextGaussian());
             var frag = OrbitalElements.FromStateVector(pos, vel + dv);
             if (frag.Eccentricity >= 1 || frag.SemiMajorAxis <= Constants.EarthRadiusKm) continue; // escaped/decayed instantly
-            Add(frag, mcls[c], acls[c], weight, nail: false);
+            Add(frag, FragMass[c], FragArea[c], weight, nail: false);
         }
     }
 

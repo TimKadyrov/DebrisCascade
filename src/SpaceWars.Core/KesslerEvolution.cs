@@ -78,6 +78,23 @@ public sealed class KesslerEvolution
     /// </summary>
     public double CrateringEjectaMinLcM { get; init; } = 0.0;
 
+    /// <summary>
+    /// Non-collision fragmentations per year across LEO — explosions of rocket bodies and derelicts
+    /// (residual propellant, batteries) — at the seeded population. Each intact object's chance
+    /// scales with its mass, so the rate then follows the intact population as launches add to it
+    /// or drag removes it. ~4/yr is roughly the long-run historical average of fragmentation events;
+    /// 0 disables. This is the small-debris source that collisions alone don't supply.
+    /// </summary>
+    public double ExplosionsPerYear { get; init; } = 4.0;
+    /// <summary>
+    /// Breakup-model explosion scale factor S: N(&gt;Lc) = 6·S·Lc^-1.6. S = 1 is a large rocket-stage
+    /// explosion (~240 fragments ≥10 cm). The default 0.25 (~60 fragments ≥10 cm) represents the
+    /// average event, most of which are smaller (batteries, minor breakups), and keeps four events a
+    /// year to a few hundred new catalogued objects a year, the right order for observed growth.
+    /// </summary>
+    public double ExplosionScale { get; init; } = 0.25;
+    private double _explPerKgSec = -1;   // per-kg explosion rate, calibrated on the first step
+
     /// <summary>Altitude band [km] reported as the "belt" (<see cref="EvolutionResult.BeltTrackableObjects"/>).</summary>
     public double BeltLoKm { get; init; } = 700;
     public double BeltHiKm { get; init; } = 1100;
@@ -327,6 +344,8 @@ public sealed class KesslerEvolution
             }
         }
 
+        ApplyExplosions(dN, dtSec);
+
         // Apply, clamping to [0, SaturationCap]. The cap keeps a violent (physically absurd)
         // runaway finite instead of overflowing to Infinity/NaN — a saturated cell still reads
         // as "ran away" without breaking the explicit integrator.
@@ -376,7 +395,47 @@ public sealed class KesslerEvolution
         Span<double> cnt = stackalloc double[SizeClassCount];
         for (int c = 0; c < SizeClassCount; c++) mass[c] = _cls[c].MassKg;
         BreakupModel.DistributeFragments(meff, availMass, LcEdges, mass, cnt);
+        DepositCounts(dN, s, cnt, events);
+    }
 
+    /// <summary>
+    /// Explosions this step: intact objects (the intact classes) fragment at a per-kg rate calibrated
+    /// so the seeded population produces <see cref="ExplosionsPerYear"/>; each removes its parent and
+    /// deposits breakup-model explosion fragments, spread across shells like collision debris.
+    /// </summary>
+    private void ApplyExplosions(double[,] dN, double dtSec)
+    {
+        if (ExplosionsPerYear <= 0) return;
+        if (_explPerKgSec < 0)
+        {
+            double m = 0;
+            for (int s = 0; s < _nShell; s++) for (int c = IntactClassStart; c < SizeClassCount; c++) m += _n[s, c] * _cls[c].MassKg;
+            _explPerKgSec = m > 0 ? ExplosionsPerYear / (365.25 * Constants.SecondsPerDay) / m : 0;
+        }
+        if (_explPerKgSec <= 0) return;
+
+        Span<double> mass = stackalloc double[SizeClassCount];
+        Span<double> cnt = stackalloc double[SizeClassCount];
+        for (int c = 0; c < SizeClassCount; c++) mass[c] = _cls[c].MassKg;
+        for (int c = IntactClassStart; c < SizeClassCount; c++)
+        {
+            BreakupModel.DistributeExplosionFragments(_cls[c].MassKg, LcEdges, mass, cnt, ExplosionScale);
+            for (int s = 0; s < _nShell; s++)
+            {
+                double events = Math.Min(_n[s, c] * _cls[c].MassKg * _explPerKgSec * dtSec, _n[s, c]);
+                if (events <= 0) continue;
+                dN[s, c] -= events;
+                ExplosionsTotal += events;
+                DepositCounts(dN, s, cnt, events);
+            }
+        }
+    }
+
+    /// <summary>Explosions so far in this model's run (fractional — the box model is continuous).</summary>
+    public double ExplosionsTotal { get; private set; }
+
+    private void DepositCounts(double[,] dN, int s, ReadOnlySpan<double> cnt, double events)
+    {
         EnsureSpreadKernel();
         for (int c = 0; c < SizeClassCount; c++)
         {

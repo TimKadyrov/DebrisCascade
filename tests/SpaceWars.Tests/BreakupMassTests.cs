@@ -54,6 +54,22 @@ public class BreakupMassTests
     }
 
     [Fact]
+    public void ExplosionFragments_FollowTheExplosionLaw_AndConserveMass()
+    {
+        // Breakup-model explosion branch: N(>Lc) = 6·S·Lc^-1.6 → ~9,500 fragments ≥1 cm for S = 1.
+        Assert.InRange(BreakupModel.ExplosionCountLargerThan(0.01), 9_400, 9_600);
+
+        var mass = Edges.Zip(Edges.Skip(1), (a, b) => BreakupModel.FragmentMassFromLc(Math.Sqrt(a * b))).ToArray();
+        var cnt = new double[mass.Length];
+        BreakupModel.DistributeExplosionFragments(1500, Edges, mass, cnt);   // a rocket upper stage
+        Assert.InRange(cnt.Sum(), 0.9 * BreakupModel.ExplosionCountLargerThan(0.01), BreakupModel.ExplosionCountLargerThan(0.01));
+        Assert.True(cnt.Select((n, c) => n * mass[c]).Sum() <= 1500 * (1 + 1e-9));
+
+        BreakupModel.DistributeExplosionFragments(1500, Edges, mass, cnt, scale: 0);
+        Assert.Equal(0, cnt.Sum());
+    }
+
+    [Fact]
     public void DistributeFragments_TinyBudget_ProducesFewFragments()
     {
         var mass = Edges.Zip(Edges.Skip(1), (a, b) => BreakupModel.FragmentMassFromLc(Math.Sqrt(a * b))).ToArray();
