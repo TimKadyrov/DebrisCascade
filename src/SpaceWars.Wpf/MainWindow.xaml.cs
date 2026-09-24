@@ -309,7 +309,7 @@ public partial class MainWindow : Window
         for (int k = 0; k < n.Length; k++) sb.AppendLine($"  {n[k],7:N0} | {Pct(belt[k] - 1),11} | {Pct(all[k] - 1),10}");
         sb.AppendLine($"\nOne ASAT strike (1 t satellite, 865 km): belt {Pct(asatBelt - 1)}, all objects {Pct(asatAll - 1)}.");
         sb.AppendLine($"≈ {(asatBelt - 1) / Math.Max(1e-12, belt[0] - 1):F0} barrels on the belt metric, {(asatAll - 1) / Math.Max(1e-12, all[0] - 1):F0} on all objects.");
-        sb.AppendLine("Tip: set the release altitude to 900 km to match the deck's scale check.");
+        if (Math.Abs(i.AltKm - 900) > 1) sb.AppendLine("Tip: set the release altitude to 900 km to match the deck's scale check.");
         var ch = new Chart
         {
             YLabel = "added after the horizon, vs no barrels", LogY = true, YFmt = v => Pct(v / 100), BarLabel = v => Pct(v / 100),

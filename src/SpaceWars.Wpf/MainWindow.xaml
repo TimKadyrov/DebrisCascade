@@ -56,7 +56,7 @@
                                Margin="0,10,0,2" FontWeight="Bold"/>
                     <TextBlock Style="{StaticResource Head}" Text="BARREL"/>
                     <TextBlock Style="{StaticResource Lbl}" Text="Release altitude (km)"/>
-                    <TextBox x:Name="AltKm" Text="550"/>
+                    <TextBox x:Name="AltKm" Text="900"/>
                     <TextBlock Style="{StaticResource Lbl}" Text="Inclination (deg)"/>
                     <TextBox x:Name="IncDeg" Text="53"/>
                     <TextBlock Style="{StaticResource Lbl}" Text="Nail count"/>
