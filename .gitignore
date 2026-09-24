@@ -21,3 +21,7 @@ viz/charts.html
 .vs/
 *.swp
 Thumbs.db
+
+# Deck working backups (safety copies)
+*.bak.pptx
+*.bak[0-9].pptx
