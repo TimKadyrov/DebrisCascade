@@ -175,18 +175,134 @@ public static class Scenarios
         return (br, kr, b.UsedGpu);
     }
 
-    public static (double[] Rates, double[] Growth) Tipping(IReadOnlyList<CatalogObject> cat, ScenarioInputs i)
+    // ---------------------------------------------------------------------------------------------
+    // The deck's analyses, driven by the UI inputs. The metric throughout is the deck's: debris ≥10 cm
+    // in the 700–1,100 km belt after the horizon, over today's belt objects ≥10 cm (working satellites
+    // aren't debris, so a working run's own start count is lower; today's count is the common yardstick).
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>A box model built from the inputs; any argument given overrides the matching input.</summary>
+    public static KesslerEvolution Box(IReadOnlyList<CatalogObject> cat, ScenarioInputs i, double? launches = null,
+        bool? working = null, double? removals = null, double? disposal = null, double? rocketBodies = null,
+        double? avoidance = null, bool? responsive = null)
     {
-        double[] rates = { 0, 50, 100, 150, 200, 300, 400, 600, 800, 1200, 1600, 2000 };
-        var nail = MakeNail(i);
-        var g = rates.Select(r =>
+        var m = new KesslerEvolution(MakeNail(i))
         {
-            var m = new KesslerEvolution(nail) { SolarActivity = i.SolarActivity, LaunchRatePerYear = r, LaunchAltKm = i.LaunchAltKm, ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = i.RemovalsPerYear, WorkingSatellites = i.WorkingSatellites, DisposalSuccess = i.DisposalSuccess, RocketBodyDisposal = i.RocketBodyDisposal, AvoidanceSuccess = i.AvoidanceSuccess, SatelliteLifetimeYears = i.SatelliteLifetimeYears };
-            m.SeedFromCatalog(cat);
-            var rr = m.Run(i.HorizonYears, 10);
-            return rr.TotalObjects[^1] / rr.TotalObjects[0];
-        }).ToArray();
-        return (rates, g);
+            SolarActivity = i.SolarActivity, LaunchRatePerYear = launches ?? i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm,
+            ResponsiveLaunch = responsive ?? i.Responsive, LossTolerancePerYear = i.LossTolerance,
+            ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = removals ?? i.RemovalsPerYear,
+            WorkingSatellites = working ?? i.WorkingSatellites, DisposalSuccess = disposal ?? i.DisposalSuccess,
+            RocketBodyDisposal = rocketBodies ?? i.RocketBodyDisposal, AvoidanceSuccess = avoidance ?? i.AvoidanceSuccess,
+            SatelliteLifetimeYears = i.SatelliteLifetimeYears,
+        };
+        m.SeedFromCatalog(cat);
+        return m;
+    }
+
+    /// <summary>Today's belt objects ≥10 cm (700–1,100 km), every satellite counted — the growth yardstick.</summary>
+    public static double BeltToday(IReadOnlyList<CatalogObject> cat, ScenarioInputs i) =>
+        Box(cat, i, working: false).TotalTrackable(700, 1100);
+
+    private static double BeltEnd(KesslerEvolution m, ScenarioInputs i) => m.Run(i.HorizonYears, 10).BeltTrackableObjects[^1];
+
+    /// <summary>Belt growth vs objects added a year at the launch altitude — dead from day one, and (when the
+    /// working-satellite box is ticked) as working satellites with the chosen disposal and avoidance.</summary>
+    public static (double[] Rates, double[] NeverDeorbited, double[]? Working, double BeltToday) Tipping(
+        IReadOnlyList<CatalogObject> cat, ScenarioInputs i)
+    {
+        double[] rates = { 0, 25, 50, 100, 150, 200, 300, 400, 500, 700, 1000 };
+        double today = BeltToday(cat, i);
+        double[] Curve(bool working) => rates.AsParallel().AsOrdered()
+            .Select(r => BeltEnd(Box(cat, i, launches: r, working: working, responsive: false), i) / today).ToArray();
+        return (rates, Curve(false), i.WorkingSatellites ? Curve(true) : null, today);
+    }
+
+    /// <summary>Scale check: the barrel's effect on the belt (≥10 cm) and on all objects (incl. the 1–10 cm
+    /// field) vs number of barrels at the release altitude, and one ASAT strike (1 t, 865 km) for scale.</summary>
+    public static (double[] Barrels, double[] BeltRatio, double[] AllRatio, double AsatBeltRatio, double AsatAllRatio) Barrels(
+        IReadOnlyList<CatalogObject> cat, ScenarioInputs i)
+    {
+        double[] counts = { 1, 3, 10, 30, 100, 300, 1000 };
+        (double Belt, double All) End(KesslerEvolution m) { var r = m.Run(i.HorizonYears, 10); return (r.BeltTrackableObjects[^1], r.TotalObjects[^1]); }
+        var baseEnd = End(Box(cat, i));
+        var runs = counts.AsParallel().AsOrdered().Select(k => { var m = Box(cat, i); m.InjectBarrel(i.AltKm, k * i.NailCount); return End(m); }).ToArray();
+        var asatM = Box(cat, i); asatM.InjectBreakup(865, 1000, 10); var asat = End(asatM);
+        return (counts, runs.Select(r => r.Belt / baseEnd.Belt).ToArray(), runs.Select(r => r.All / baseEnd.All).ToArray(),
+                asat.Belt / baseEnd.Belt, asat.All / baseEnd.All);
+    }
+
+    /// <summary>Every source on one measure: extra belt objects ≥10 cm after the horizon, vs adding nothing.</summary>
+    public static (string Label, double Extra, string Kind)[] Comparison(IReadOnlyList<CatalogObject> cat, ScenarioInputs i)
+    {
+        double baseEnd = BeltEnd(Box(cat, i, launches: 0, working: false), i);
+        var jobs = new List<(string Label, string Kind, Func<double>)>
+        {
+            ($"1 barrel of nails ({i.AltKm:F0} km)", "barrel", () => { var m = Box(cat, i, launches: 0, working: false); m.InjectBarrel(i.AltKm, i.NailCount); return BeltEnd(m, i); }),
+            ("1 ASAT strike on a 1 t satellite", "asat", () => { var m = Box(cat, i, launches: 0, working: false); m.InjectBreakup(865, 1000, 10); return BeltEnd(m, i); }),
+            ($"1,000 barrels ({i.AltKm:F0} km, the ceiling)", "barrel", () => { var m = Box(cat, i, launches: 0, working: false); m.InjectBarrel(i.AltKm, 1000.0 * i.NailCount); return BeltEnd(m, i); }),
+            ("50 a year, never deorbited", "traffic", () => BeltEnd(Box(cat, i, launches: 50, working: false, responsive: false), i)),
+            ("500 a year, never deorbited", "traffic", () => BeltEnd(Box(cat, i, launches: 500, working: false, responsive: false), i)),
+        };
+        if (i.WorkingSatellites)
+            jobs.Add(("500 a year, working + deorbited", "working", () => BeltEnd(Box(cat, i, launches: 500, working: true, responsive: false), i)));
+        return jobs.AsParallel().AsOrdered().Select(j => (j.Label, j.Item3() - baseEnd, j.Kind)).ToArray();
+    }
+
+    /// <summary>Operators quit: belt ≥10 cm over time at the launch rate (500/yr if 0), constant vs responsive.</summary>
+    public static (double[] Years, double[] Constant, double[] Responsive, double QuitYear, double Rate) Operators(
+        IReadOnlyList<CatalogObject> cat, ScenarioInputs i)
+    {
+        double rate = i.LaunchRatePerYear > 0 ? i.LaunchRatePerYear : 500;
+        var c = Box(cat, i, launches: rate, responsive: false).Run(i.HorizonYears, 10);
+        var r = Box(cat, i, launches: rate, responsive: true).Run(i.HorizonYears, 10);
+        int q = Array.FindIndex(r.LaunchFraction, f => f <= 1e-9);
+        return (c.Years, c.BeltTrackableObjects, r.BeltTrackableObjects, q >= 0 ? r.Years[q] : double.NaN, rate);
+    }
+
+    /// <summary>Removal: belt growth vs large dead objects removed a year (riskiest first), with nothing added
+    /// and with the launch rate added (50/yr if 0).</summary>
+    public static (double[] Removals, double[] NothingAdded, double[] WithLaunches, double Rate, double BeltToday) Removal(
+        IReadOnlyList<CatalogObject> cat, ScenarioInputs i)
+    {
+        double[] rem = { 0, 2, 5, 10, 20, 50, 100 };
+        double rate = i.LaunchRatePerYear > 0 ? i.LaunchRatePerYear : 50, today = BeltToday(cat, i);
+        double[] Curve(double launches) => rem.AsParallel().AsOrdered()
+            .Select(k => BeltEnd(Box(cat, i, launches: launches, removals: k, responsive: false), i) / today).ToArray();
+        return (rem, Curve(0), Curve(rate), rate, today);
+    }
+
+    /// <summary>Working satellites: belt growth at 50 and 500 a year (plus the input rate) for the deck's four
+    /// settings and the user's own (disposal / rocket bodies / avoidance).</summary>
+    public static (double[] Rates, (string Name, double Pmd, double Rb, double Avoid)[] Settings, double[,] Growth) WorkingSweep(
+        IReadOnlyList<CatalogObject> cat, ScenarioInputs i)
+    {
+        var rates = new List<double> { 50, 500 };
+        if (i.LaunchRatePerYear > 0 && !rates.Contains(i.LaunchRatePerYear)) rates.Add(i.LaunchRatePerYear);
+        var settings = new (string Name, double Pmd, double Rb, double Avoid)[]
+        {
+            ("never deorbited", -1, -1, -1), ("poor", 0.70, 0.50, 0.50), ("today's practice", 0.90, 0.80, 0.90),
+            ("best", 0.99, 0.95, 0.99),
+            ($"your settings ({i.DisposalSuccess:P0} / {i.RocketBodyDisposal:P0} / {i.AvoidanceSuccess:P0})", i.DisposalSuccess, i.RocketBodyDisposal, i.AvoidanceSuccess),
+        };
+        double today = BeltToday(cat, i);
+        var g = new double[rates.Count, settings.Length];
+        var cells = from r in Enumerable.Range(0, rates.Count) from s in Enumerable.Range(0, settings.Length) select (r, s);
+        foreach (var (r, s, v) in cells.AsParallel().Select(c =>
+        {
+            var st = settings[c.s]; bool on = st.Pmd >= 0;
+            var m = Box(cat, i, launches: rates[c.r], working: on, responsive: false,
+                        disposal: on ? st.Pmd : null, rocketBodies: on ? st.Rb : null, avoidance: on ? st.Avoid : null);
+            return (c.r, c.s, BeltEnd(m, i) / today);
+        }).ToList())
+            g[r, s] = v;
+        return (rates.ToArray(), settings, g);
+    }
+
+    /// <summary>How long drag takes to remove a 3–10 cm collision fragment at each altitude (years, capped 10⁴).</summary>
+    public static double[] FragmentLifetimeYears(double[] altKm, double solarActivity)
+    {
+        double am = BreakupModel.FragmentAreaToMass(0.0562);
+        return altKm.Select(a => { double d = AtmosphericDrag.LifetimeDays(a, am, solarActivity); return double.IsFinite(d) ? Math.Min(d / 365.25, 1e4) : 1e4; }).ToArray();
     }
 
     /// <summary>

@@ -34,7 +34,8 @@ CelesTrak TLEs → CUDA J2 propagation → collision flux (spatial density)
 | `SpaceWars.Native` | CUDA C++ engine (`spacewars_cuda.cu`) — batch J2 propagation + time-averaged density; built to `spacewars_cuda.dll` |
 | `SpaceWars.Interop` | P/Invoke bindings (`Cuda`) + the tier-3 conjunction cascade |
 | `SpaceWars.Cli` | Assessment CLI and scenario runners |
-| `SpaceWars.Tests` | 52 physics/GPU validation tests |
+| `SpaceWars.Wpf` | Interactive analysis tool: the deck's analyses on your own inputs (see below) |
+| `SpaceWars.Tests` | 55 physics/GPU validation tests |
 
 ## Build & run
 
@@ -70,6 +71,29 @@ export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # or a generic Wind
 | `--deck` | every number the presentation quotes → `data/deck_numbers.json` (charts: `viz/render_deck_charts.py`) |
 | `--active-only` | use CelesTrak's active satellites instead of the full Space-Track on-orbit catalog |
 | `--calibrate-speed` / `--calibrate-comoving` | cube rate by encounter speed (real vs scrambled planes); what the slow pairs are |
+
+### WPF tool
+
+`dotnet run --project src/SpaceWars.Wpf`. Each button runs one of the deck's analyses on the inputs in
+the left panel and draws it the way the deck does: the metric is debris ≥10 cm in the 700–1,100 km
+belt, and growth is "×" over today's belt objects.
+
+| View | What it shows |
+|---|---|
+| Lethality & Flux | single-nail lethality, drag lifetime and flux (text) |
+| Evolve (box) / Cascade (discrete) / Conjunction (cube) | belt debris over time, with and without the barrel; the working fleet when ticked |
+| Usability by altitude | collision risk per satellite by altitude (today and with the barrel, year slider), the belt, the walk-away line, and how long a fragment stays (right axis) |
+| Scale check (barrels) | belt and all-object change vs number of barrels at the release altitude, with one ASAT strike for scale |
+| Comparison | barrel, ASAT and traffic on one measure: extra belt objects after the horizon |
+| Tipping sweep | belt growth vs objects added a year; a second curve for working satellites when ticked |
+| Operators quit | launching throughout vs operators throttling back and quitting |
+| Working satellites | never deorbited / poor / today's practice / best / your settings, at 50 and 500 a year |
+| Removal | belt growth vs large dead objects removed a year, with nothing added and with traffic |
+
+"Working satellites (deorbit + dodge)" switches the box and cube engines to working satellites with the
+disposal, rocket-body, avoidance and lifetime fields below it. **Save PNG** writes the current chart and
+its text; `SpaceWars.Wpf.exe --render <folder> [view ...]` renders every view (or the named ones) on the
+default inputs and exits.
 
 ## Visualizations
 
@@ -107,7 +131,7 @@ export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # or a generic Wind
   else left dead in place; launched rocket bodies are disposed of with `RocketBodyDisposal` (0.80).
   The defaults follow the evidence: the NASA/FCC/IADC 90% benchmark, ESA's 2025 rocket-body figure,
   and McDowell's manoeuvrable share of active satellites. `--deck` sweeps poor / today's practice /
-  best settings and cross-checks the baseline with the cube engine (8 seeds). Not yet in the WPF tool.
+  best settings and cross-checks the baseline with the cube engine (8 seeds). Also a checkbox in the WPF tool.
 - Box model uses a well-mixed shell assumption at 10 km/s. The conjunction Cube method uses real
   orbit geometry; `--calibrate` compares the two on the production population and they agree
   within ~5% (all collisions 1.01×, catastrophic 0.96× at 10,000 snapshots). The cube engine

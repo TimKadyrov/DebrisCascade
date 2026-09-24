@@ -2,25 +2,24 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
-using System.Windows.Shapes;
+using SpaceWars.Core;
 using SpaceWars.Interop;
 using IOPath = System.IO.Path;
 
 namespace SpaceWars.Wpf;
 
+/// <summary>
+/// The analysis tool. Each view runs one of the deck's analyses on the current inputs and draws it the
+/// way the deck does: the metric is debris ≥10 cm in the 700–1,100 km belt, growth is "×" over today.
+/// </summary>
 public partial class MainWindow : Window
 {
     private CatalogBundle? _catalog;
     private Action? _redraw;
-
-    private static readonly Color CyanC = Color.FromRgb(0x4D, 0xA6, 0xFF);
-    private static readonly Color AmberC = Color.FromRgb(0xFF, 0xCF, 0x5C);
-    private static readonly Color RedC = Color.FromRgb(0xFF, 0x5A, 0x52);
-    private static readonly Color GreenC = Color.FromRgb(0x39, 0xD9, 0x8A);
 
     public MainWindow()
     {
@@ -46,12 +45,66 @@ public partial class MainWindow : Window
             var cat = await Scenarios.LoadCatalogAsync(DataDir());
             _catalog = cat;
             ChartHint.Text = "Pick an analysis above.";
-            Title = $"SpaceWars — {cat.Objects.Count:N0} LEO objects · SATCAT: {cat.Source} " +
-                    $"({(cat.Objects.Count > 0 ? 100.0 * cat.WithRcs / cat.Objects.Count : 0):F0}% RCS) · " +
-                    $"mean {cat.MeanMassKg:F0} kg / {cat.MeanAreaM2:F1} m²";
+            Title = $"SpaceWars — {cat.Objects.Count:N0} LEO objects ({cat.ActiveCount:N0} working) · SATCAT: {cat.Source} " +
+                    $"({(cat.Objects.Count > 0 ? 100.0 * cat.WithRcs / cat.Objects.Count : 0):F0}% RCS)";
         }
-        catch (Exception ex) { ResultsBox.Text = "Catalog load failed:\n" + ex.Message; }
-        finally { SetBusy(false, null); }
+        catch (Exception ex) { ResultsBox.Text = "Catalog load failed:\n" + ex.Message; SetBusy(false, null); return; }
+        SetBusy(false, null);
+        var args = Environment.GetCommandLineArgs();
+        int r = Array.IndexOf(args, "--render");
+        if (r >= 0 && r + 1 < args.Length) await RenderAllAsync(args[r + 1], args.Skip(r + 2).ToArray());
+    }
+
+    /// <summary>
+    /// <c>--render &lt;folder&gt; [view ...]</c>: run every view (or the named ones) on the default inputs, save each chart and its text there,
+    /// then exit — for checking the charts and for documentation.
+    /// </summary>
+    private async Task RenderAllAsync(string dir, string[] only)
+    {
+        Directory.CreateDirectory(dir);
+        var views = new (string File, Button Button)[]
+        {
+            ("evolve", BtnEvolve), ("cascade", BtnCascade), ("conjunction", BtnConj), ("usability", BtnUse),
+            ("barrels", BtnBarrels), ("comparison", BtnCompare), ("tipping", BtnTip), ("operators", BtnOps),
+            ("working", BtnWorking), ("removal", BtnRemoval),
+        };
+        foreach (var (file, button) in views.Where(v => only.Length == 0 || only.Contains(v.File)))
+        {
+            button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            await Task.Delay(300);
+            while (!Buttons.IsEnabled) await Task.Delay(250);
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            SaveChart(IOPath.Combine(dir, file + ".png"));
+            File.WriteAllText(IOPath.Combine(dir, file + ".txt"), ResultsBox.Text);
+        }
+        Close();
+    }
+
+    private void SaveChart(string path)
+    {
+        const double scale = 1.5;
+        double w = ChartPanel.ActualWidth, h = ChartPanel.ActualHeight;
+        var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap((int)(w * scale), (int)(h * scale),
+            96 * scale, 96 * scale, System.Windows.Media.PixelFormats.Pbgra32);
+        // Draw through a VisualBrush: rendering the panel directly would keep its offset in the window.
+        var dv = new System.Windows.Media.DrawingVisual();
+        using (var ctx = dv.RenderOpen())
+        {
+            ctx.DrawRectangle(new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x0B, 0x0F, 0x17)), null, new Rect(0, 0, w, h));
+            ctx.DrawRectangle(new System.Windows.Media.VisualBrush(ChartPanel), null, new Rect(0, 0, w, h));
+        }
+        bmp.Render(dv);
+        var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+        using var fs = File.Create(path); enc.Save(fs);
+    }
+
+    private void SavePng(object s, RoutedEventArgs e)
+    {
+        var dlg = new Microsoft.Win32.SaveFileDialog { Filter = "PNG image|*.png", FileName = "spacewars-chart.png" };
+        if (dlg.ShowDialog(this) != true) return;
+        SaveChart(dlg.FileName);
+        File.WriteAllText(IOPath.ChangeExtension(dlg.FileName, ".txt"), ResultsBox.Text);
     }
 
     private void SetBusy(bool busy, string? hint)
@@ -106,76 +159,121 @@ public partial class MainWindow : Window
         finally { SetBusy(false, null); }
     }
 
+    /// <summary>Draw a chart now and on every resize.</summary>
+    private Action Show(Chart chart) => () => chart.Draw(ChartCanvas);
+
+    // ---------------------------------------------------------------- nail physics ------------------
+
     private async void RunFlux(object s, RoutedEventArgs e) => await RunAsync("Lethality & Flux", (cat, i) =>
-        (Scenarios.LethalityAndFlux(cat.Objects, i, cat.MeanAreaM2), () => { }));
+        (Scenarios.LethalityAndFlux(cat.Objects, i, cat.MeanAreaM2), () => ChartCanvas.Children.Clear()));
+
+    // ---------------------------------------------------------------- the three engines -------------
 
     private async void RunEvolve(object s, RoutedEventArgs e) => await RunAsync("Evolve (box)", (cat, i) =>
     {
         var (b, k) = Scenarios.Evolution(cat.Objects, i);
-        string t = TrajectoryText(b.Years, b.TotalObjects, k.TotalObjects, b.CatastrophicPerYear, k.CatastrophicPerYear);
-        return (t, () => DrawTrajectory(b.Years, b.TotalObjects, k.TotalObjects, "years", "debris objects on orbit"));
+        return Trajectory(i, "box model", b.Years, b.BeltTrackableObjects, k.BeltTrackableObjects, b.TrackableObjects,
+            b.TotalObjects, k.TotalObjects, b.CatastrophicPerYear, b.WorkingSatellites, null);
     });
 
     private async void RunCascade(object s, RoutedEventArgs e) => await RunAsync("Cascade (discrete)", (cat, i) =>
     {
         var (b, k) = Scenarios.Cascade(cat.Objects, i);
-        string t = TrajectoryText(b.Years, b.TotalObjects, k.TotalObjects, b.CatastrophicPerYear, k.CatastrophicPerYear);
-        return (t, () => DrawTrajectory(b.Years, b.TotalObjects, k.TotalObjects, "years", "debris objects on orbit"));
+        string note = i.WorkingSatellites
+            ? "Note: the discrete engine doesn't model working satellites; every satellite here is dead from day one. Use Evolve (box) or Conjunction (cube)."
+            : "One seed of a stochastic engine: the deck quotes 8-seed means.";
+        return Trajectory(i, "discrete engine, seed 1", b.Years, b.BeltTrackableObjects, k.BeltTrackableObjects, b.TrackableObjects,
+            b.TotalObjects, k.TotalObjects, b.CatastrophicPerYear, [], note);
     });
 
     private async void RunConjunction(object s, RoutedEventArgs e) => await RunAsync("Conjunction (cube)", (cat, i) =>
     {
         var (b, k, gpu) = Scenarios.Conjunction(cat.Objects, i);
-        string t = TrajectoryText(b.Years, b.TotalObjects, k.TotalObjects, b.CatastrophicPerYear, k.CatastrophicPerYear)
-                 + $"\nengine: {(gpu ? "CUDA sw_propagate_state (GPU)" : "CPU fallback")}"
-                 + "\n(geometry is faithful; absolute rate is qualitative — see calibration)";
-        return (t, () => DrawTrajectory(b.Years, b.TotalObjects, k.TotalObjects, "years", "debris objects on orbit"));
+        return Trajectory(i, $"cube engine, seed 1 ({(gpu ? "CUDA" : "CPU")})", b.Years, b.BeltTrackableObjects, k.BeltTrackableObjects,
+            b.TrackableObjects, b.TotalObjects, k.TotalObjects, b.CatastrophicPerYear, b.WorkingSatellites,
+            "One seed of a stochastic engine: the deck quotes 8-seed means.");
     });
 
-    private async void RunTipping(object s, RoutedEventArgs e) => await RunAsync("Tipping sweep", (cat, i) =>
+    /// <summary>The deck's metric over time: belt debris ≥10 cm with and without the barrel (plus the working fleet).</summary>
+    private (string, Action) Trajectory(ScenarioInputs i, string engine, double[] yr, double[] belt, double[] beltBarrel,
+        double[] leo, double[] all, double[] allBarrel, double[] cat, double[] working, string? note)
     {
-        var (rates, growth) = Scenarios.Tipping(cat.Objects, i);
-        var sb = new System.Text.StringBuilder($"50-yr growth vs launch rate into {i.LaunchAltKm:F0} km band:\n");
-        for (int j = 0; j < rates.Length; j++)
-            sb.AppendLine($"  {rates[j],6:F0}/yr → {growth[j],8:F2}×  {(growth[j] > 1 ? "RUNAWAY" : "self-clean")}");
-        return (sb.ToString(), () => DrawSeries("launches/yr", "50-yr growth ×", true,
-            new Series("growth", AmberC, rates, growth), new Series("threshold", GreenC, new[] { rates[0], rates[^1] }, new[] { 1.0, 1.0 })));
-    });
+        var sb = new StringBuilder();
+        sb.AppendLine("  year | belt ≥10 cm | + barrel | LEO ≥10 cm | all objects (incl. 1–10 cm) | + barrel | catastrophic/yr");
+        foreach (int y in new[] { 0, 10, 25, 50 }.Where(y => y <= yr[^1] + 1e-9).Append((int)Math.Round(yr[^1])).Distinct())
+        {
+            int j = Array.FindIndex(yr, t => t >= y - 1e-6); if (j < 0) j = yr.Length - 1;
+            sb.AppendLine($"  {(int)Math.Round(yr[j]),4} | {belt[j],11:N0} | {beltBarrel[j],8:N0} | {leo[j],10:N0} | {all[j],27:N0} | {allBarrel[j],8:N0} | {cat[j],6:F1}");
+        }
+        sb.AppendLine($"\nBelt debris ≥10 cm: {Fmt.Times(belt[^1] / belt[0])} over {yr[^1]:F0} yr; the barrel adds {Pct(beltBarrel[^1] / belt[^1] - 1)} to the belt " +
+                      $"and {Pct(allBarrel[^1] / all[^1] - 1)} to all objects.");
+        if (working.Length > 0 && working.Max() > 0)
+            sb.AppendLine($"Working satellites (not debris): {working[0]:N0} → {working[^1]:N0}  " +
+                          $"({i.DisposalSuccess:P0} deorbited, {i.RocketBodyDisposal:P0} rocket bodies, {i.AvoidanceSuccess:P0} avoided, {i.SatelliteLifetimeYears:0.#}-yr life)");
+        if (note != null) sb.AppendLine(note);
 
-    private double[]? _uAlt, _uYears;
+        var ch = new Chart
+        {
+            XLabel = "years", YLabel = "belt debris ≥10 cm (700–1,100 km)", YMin = 0,
+            Tag = $"{engine} · {Launches(i)} · barrel {i.NailCount:N0} nails at {i.AltKm:F0} km",
+        };
+        ch.Lines.Add(new("baseline", Palette.Blue, yr, belt, Fill: true));
+        ch.Lines.Add(new("+ barrel", Palette.Red, yr, beltBarrel, Dashed: true));
+        ch.Notes.Add(new(yr[^1], belt[^1], Fmt.Times(belt[^1] / belt[0]), Palette.Blue));
+        if (working.Length > 0 && working.Max() > 0)
+        {
+            ch.Lines.Add(new("working satellites (right axis)", Palette.Green, yr, working, Axis2: true, Thickness: 1.6));
+            ch.Y2Label = "working satellites"; ch.Y2Color = Palette.Green; ch.Y2Min = 0;
+        }
+        return (sb.ToString(), Show(ch));
+    }
+
+    // ---------------------------------------------------------------- altitude ----------------------
+
+    private double[]? _uAlt, _uYears, _uToday, _uLife;
     private double[][]? _uHaz;
-    private double _uThr;
+    private double _uThr, _uBarrelAlt;
 
     private async void RunUsability(object s, RoutedEventArgs e) => await RunAsync("Usability by altitude", (cat, i) =>
     {
         var (alt, years, haz, thr) = Scenarios.UsabilityOverTime(cat.Objects, i, cat.MeanAreaM2);
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"Per-satellite collision probability vs altitude (target {cat.MeanAreaM2:F1} m²).");
-        sb.AppendLine($"Unusable threshold = {thr:P1}/yr. Drag the Year slider to scrub time.\n");
-        sb.AppendLine($"Unusable at yr 0  : {UnusableBands(alt, haz[0], thr)}");
-        sb.AppendLine($"Unusable at yr {years.Length - 1,-3}: {UnusableBands(alt, haz[^1], thr)}");
-        int pk = Array.IndexOf(haz[^1], haz[^1].Max());
-        sb.AppendLine($"\nWorst band ~{alt[pk]:F0} km: {haz[^1][pk]:P1}/yr at horizon.");
+        var today = Scenarios.Box(cat.Objects, i).SatelliteHazardByShell(cat.MeanAreaM2, i.RelVelMS);
+        var life = Scenarios.FragmentLifetimeYears(alt, i.SolarActivity);
+        var sb = new StringBuilder();
+        sb.AppendLine($"Per-satellite chance a year of a lethal hit, by altitude (a {cat.MeanAreaM2:F1} m² satellite).");
+        sb.AppendLine($"Operators walk away at {thr:P1} a year. Orange (right axis): years for drag to remove a 3–10 cm fragment.");
+        int pk = Array.IndexOf(today, today.Max());
+        sb.AppendLine($"\nToday: peak {today[pk]:P2}/yr at {alt[pk]:F0} km. Over the walk-away line: {UnusableBands(alt, today, thr)}.");
+        sb.AppendLine($"With the barrel at {i.AltKm:F0} km, year 0: over the line: {UnusableBands(alt, haz[0], thr)}; year {years[^1]:F0}: {UnusableBands(alt, haz[^1], thr)}.");
+        sb.AppendLine("Drag the Year slider to scrub time.");
         return (sb.ToString(), () =>
         {
-            _uAlt = alt; _uYears = years; _uHaz = haz; _uThr = thr;
+            _uAlt = alt; _uYears = years; _uHaz = haz; _uThr = thr; _uToday = today; _uLife = life; _uBarrelAlt = i.AltKm;
             UsabilityControls.Visibility = Visibility.Visible;
             YearSlider.Maximum = years.Length - 1;
-            YearSlider.Value = years.Length - 1;
-            DrawUsabilityYear(years.Length - 1);
+            YearSlider.Value = 0;
+            DrawUsabilityYear(0);
             _redraw = () => DrawUsabilityYear((int)YearSlider.Value);
         });
     });
 
     private void DrawUsabilityYear(int y)
     {
-        if (_uAlt is null || _uHaz is null || _uYears is null) return;
+        if (_uAlt is null || _uHaz is null || _uYears is null || _uToday is null || _uLife is null) return;
         y = Math.Clamp(y, 0, _uHaz.Length - 1);
         YearLabel.Text = ((int)_uYears[y]).ToString();
-        DrawSeries("altitude (km)", "collision prob / sat / yr", true,
-            new Series("year 0", Color.FromArgb(120, 0x4D, 0xA6, 0xFF), _uAlt, _uHaz[0]),
-            new Series($"year {(int)_uYears[y]}", RedC, _uAlt, _uHaz[y]),
-            new Series("unusable", AmberC, new[] { _uAlt[0], _uAlt[^1] }, new[] { _uThr, _uThr }));
+        var ch = new Chart
+        {
+            XLabel = "altitude (km)", YLabel = "collision risk per satellite (per year)", YFmt = Fmt.Pct, YMin = 0,
+            Y2Label = "years to clear a 3–10 cm fragment (log)", LogY2 = true, Y2Fmt = Fmt.Years, Y2Min = 0.05, Y2Max = 3e4,
+            Tag = "box model · today's catalog · drag lifetimes", Headroom = 1.45, BottomExtra = 26,
+        };
+        ch.Bands.Add(new(700, 1100, Palette.Alpha(Palette.Red, 26), "700–1,100 km belt"));
+        ch.Lines.Add(new("today", Palette.Blue, _uAlt, _uToday, Fill: true));
+        ch.Lines.Add(new($"with the barrel at {_uBarrelAlt:F0} km, year {(int)_uYears[y]}", Palette.Red, _uAlt, _uHaz[y], Dashed: true, Thickness: 1.6));
+        ch.Lines.Add(new("years to clear a 3–10 cm fragment", Palette.Orange, _uAlt, _uLife, Axis2: true));
+        ch.Refs.Add(new(_uThr, $"operators walk away ({_uThr:P0}/yr)", Palette.Amber));
+        ch.Draw(ChartCanvas);
     }
 
     private void YearSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -201,95 +299,147 @@ public partial class MainWindow : Window
         return parts.Count > 0 ? string.Join(", ", parts) : "none";
     }
 
-    private static string TrajectoryText(double[] yr, double[] baseline, double[] barrel, double[] baseCat, double[] barCat)
+    // ---------------------------------------------------------------- the barrel at scale -----------
+
+    private async void RunBarrels(object s, RoutedEventArgs e) => await RunAsync("Scale check (barrels)", (cat, i) =>
     {
-        var sb = new System.Text.StringBuilder("  year | baseline | +barrel | +barrel cat/yr\n");
-        foreach (int y in new[] { 0, 10, 25, 50 })
+        var (n, belt, all, asatBelt, asatAll) = Scenarios.Barrels(cat.Objects, i);
+        var sb = new StringBuilder($"Barrels dumped at {i.AltKm:F0} km, vs the same run without them, after {i.HorizonYears:F0} yr:\n");
+        sb.AppendLine("  barrels | belt ≥10 cm | all objects (incl. 1–10 cm)");
+        for (int k = 0; k < n.Length; k++) sb.AppendLine($"  {n[k],7:N0} | {Pct(belt[k] - 1),11} | {Pct(all[k] - 1),10}");
+        sb.AppendLine($"\nOne ASAT strike (1 t satellite, 865 km): belt {Pct(asatBelt - 1)}, all objects {Pct(asatAll - 1)}.");
+        sb.AppendLine($"≈ {(asatBelt - 1) / Math.Max(1e-12, belt[0] - 1):F0} barrels on the belt metric, {(asatAll - 1) / Math.Max(1e-12, all[0] - 1):F0} on all objects.");
+        sb.AppendLine("Tip: set the release altitude to 900 km to match the deck's scale check.");
+        var ch = new Chart
         {
-            int idx = Math.Min(y, yr.Length - 1);
-            sb.AppendLine($"  {(int)yr[idx],4} | {baseline[idx],8:N0} | {barrel[idx],8:N0} | {barCat[idx],6:F1}");
-        }
-        double g = baseline[^1] / baseline[0];
-        sb.AppendLine($"  baseline {baseline[0]:N0} → {baseline[^1]:N0} ({(g > 1.02 ? "supercritical" : "stable/subcritical")})");
-        sb.AppendLine($"  extra objects from barrel at end: {barrel[^1] - baseline[^1]:N0}");
-        return sb.ToString();
-    }
+            YLabel = "added after the horizon, vs no barrels", LogY = true, YFmt = v => Pct(v / 100), BarLabel = v => Pct(v / 100),
+            Categories = n.Select(k => $"{k:N0} barrel{(k == 1 ? "" : "s")}").ToArray(), YMin = 0.01, Headroom = 8,
+            Tag = $"box model · barrels at {i.AltKm:F0} km · {i.HorizonYears:F0} years",
+        };
+        ch.Bars.Add(new("belt debris ≥10 cm", Palette.Amber, belt.Select(r => Math.Max(1e-6, (r - 1) * 100)).ToArray()));
+        ch.Bars.Add(new("all objects, incl. 1–10 cm", Palette.Blue, all.Select(r => Math.Max(1e-6, (r - 1) * 100)).ToArray()));
+        ch.Refs.Add(new((asatBelt - 1) * 100, $"one ASAT strike, belt: {Pct(asatBelt - 1)}", Palette.Red, LabelLeft: true));
+        ch.Refs.Add(new(100, "doubled", Palette.Mute, LabelLeft: true));
+        return (sb.ToString(), Show(ch));
+    });
 
-    private void DrawTrajectory(double[] yr, double[] baseline, double[] barrel, string xl, string yl) =>
-        DrawSeries(xl, yl, false, new Series("baseline", CyanC, yr, baseline), new Series("+barrel", RedC, yr, barrel));
-
-    private readonly record struct Series(string Name, Color Color, double[] X, double[] Y);
-
-    private void DrawSeries(string xLabel, string yLabel, bool logY, params Series[] series)
+    private async void RunComparison(object s, RoutedEventArgs e) => await RunAsync("Comparison", (cat, i) =>
     {
-        var c = ChartCanvas; c.Children.Clear();
-        double w = c.ActualWidth, h = c.ActualHeight;
-        if (w < 40 || h < 40 || series.Length == 0) return;
-        double mL = 64, mR = 16, mT = 14, mB = 34;
-        double x0 = mL, x1 = w - mR, y0 = h - mB, y1 = mT;
-
-        double xmin = series.Min(s => s.X.Min()), xmax = series.Max(s => s.X.Max());
-        double ymin = series.Min(s => s.Y.Where(v => !logY || v > 0).DefaultIfEmpty(0).Min());
-        double ymax = series.Max(s => s.Y.Max());
-        if (logY) { ymin = Math.Max(ymin, 1e-3); ymax = Math.Max(ymax, ymin * 10); }
-        else { ymin = Math.Min(0, ymin); if (ymax <= ymin) ymax = ymin + 1; }
-        if (xmax <= xmin) xmax = xmin + 1;
-        double TY(double v) => logY ? Math.Log10(Math.Max(v, ymin)) : v;
-        double tymin = TY(ymin), tymax = TY(ymax);
-
-        double PX(double x) => x0 + (x - xmin) / (xmax - xmin) * (x1 - x0);
-        double PY(double y) => y0 + (TY(y) - tymin) / (tymax - tymin) * (y1 - y0);
-
-        Line Axis(double ax, double ay, double bx, double by) => new()
-        { X1 = ax, Y1 = ay, X2 = bx, Y2 = by, Stroke = new SolidColorBrush(Color.FromRgb(0x2A, 0x3A, 0x52)), StrokeThickness = 1 };
-        c.Children.Add(Axis(x0, y0, x1, y0));
-        c.Children.Add(Axis(x0, y0, x0, y1));
-
-        // Y grid + labels
-        for (int g = 0; g <= 4; g++)
+        var rows = Scenarios.Comparison(cat.Objects, i);
+        var sb = new StringBuilder($"Extra belt debris ≥10 cm after {i.HorizonYears:F0} yr, compared with adding nothing:\n");
+        foreach (var r in rows) sb.AppendLine($"  {r.Label,-38} +{r.Extra:N0}");
+        sb.AppendLine("\nTraffic, not the barrel, is what moves the belt.");
+        var col = rows.Select(r => r.Kind switch { "barrel" => Palette.Amber, "asat" => Palette.Orange, "working" => Palette.Blue, _ => Palette.Red }).ToArray();
+        var ch = new Chart
         {
-            double frac = g / 4.0, yv = logY ? Math.Pow(10, tymin + frac * (tymax - tymin)) : ymin + frac * (ymax - ymin);
-            double py = PY(yv);
-            var gl = Axis(x0, py, x1, py); gl.Stroke = new SolidColorBrush(Color.FromArgb(40, 0x5A, 0x8C, 0xC8)); c.Children.Add(gl);
-            c.Children.Add(Label(FormatNum(yv), 4, py - 8, Color.FromRgb(0x9F, 0xB2, 0xCC), 10));
-        }
-        // X labels
-        for (int g = 0; g <= 4; g++)
-        {
-            double xv = xmin + g / 4.0 * (xmax - xmin);
-            c.Children.Add(Label(FormatNum(xv), PX(xv) - 12, y0 + 6, Color.FromRgb(0x9F, 0xB2, 0xCC), 10));
-        }
-        c.Children.Add(Label(xLabel, (x0 + x1) / 2 - 30, h - 16, Color.FromRgb(0x64, 0x7A, 0x99), 10));
-        var yLab = Label(yLabel, 0, 0, Color.FromRgb(0x64, 0x7A, 0x99), 10);
-        yLab.RenderTransform = new RotateTransform(-90); Canvas.SetLeft(yLab, 2); Canvas.SetTop(yLab, (y0 + y1) / 2 + 40);
-        c.Children.Add(yLab);
+            YLabel = $"extra belt debris ≥10 cm after {i.HorizonYears:F0} yr", LogY = true, YMin = 1,
+            BarLabel = v => "+" + Fmt.Num(double.Parse(v.ToString("G2", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture)),
+            Categories = rows.Select(r => r.Label).ToArray(),
+            Tag = $"box model · traffic at {i.LaunchAltKm:F0} km, ASAT 865 km",
+        };
+        ch.Bars.Add(new("", Palette.Red, rows.Select(r => Math.Max(1, r.Extra)).ToArray(), col));
+        return (sb.ToString(), Show(ch));
+    });
 
-        // series + legend
-        double lx = x1 - 120, ly = y1 + 2;
-        foreach (var s in series)
-        {
-            var pl = new Polyline { Stroke = new SolidColorBrush(s.Color), StrokeThickness = 2 };
-            for (int k = 0; k < s.X.Length; k++) pl.Points.Add(new Point(PX(s.X[k]), PY(s.Y[k])));
-            c.Children.Add(pl);
-            var swatch = new Rectangle { Width = 10, Height = 10, Fill = new SolidColorBrush(s.Color) };
-            Canvas.SetLeft(swatch, lx); Canvas.SetTop(swatch, ly); c.Children.Add(swatch);
-            c.Children.Add(Label(s.Name, lx + 14, ly - 3, s.Color, 11));
-            ly += 18;
-        }
-    }
+    // ---------------------------------------------------------------- traffic -----------------------
 
-    private static TextBlock Label(string text, double x, double y, Color color, double size)
+    private async void RunTipping(object s, RoutedEventArgs e) => await RunAsync("Tipping sweep", (cat, i) =>
     {
-        var t = new TextBlock { Text = text, Foreground = new SolidColorBrush(color), FontFamily = new FontFamily("Consolas"), FontSize = size };
-        Canvas.SetLeft(t, x); Canvas.SetTop(t, y); return t;
-    }
+        var (rates, never, working, today) = Scenarios.Tipping(cat.Objects, i);
+        var sb = new StringBuilder($"Belt debris ≥10 cm after {i.HorizonYears:F0} yr (today {today:N0}), vs objects added a year at {i.LaunchAltKm:F0} km:\n");
+        sb.AppendLine($"  per year | never deorbited{(working != null ? " | working, deorbited" : "")}");
+        for (int j = 0; j < rates.Length; j++)
+            sb.AppendLine($"  {rates[j],8:F0} | {Fmt.Times(never[j]),15}{(working != null ? $" | {Fmt.Times(working[j]),19}" : "")}");
+        sb.AppendLine("\n85% satellites, 15% rocket bodies. Never deorbited = dead from day one (a stress test, not a forecast).");
+        if (working != null) sb.AppendLine($"Working: {i.DisposalSuccess:P0} deorbited, {i.RocketBodyDisposal:P0} rocket bodies, {i.AvoidanceSuccess:P0} of tracked conjunctions avoided.");
+        var ch = new Chart
+        {
+            XLabel = $"satellites + rocket bodies added per year at {i.LaunchAltKm:F0} km, for {i.HorizonYears:F0} years",
+            YLabel = "belt debris ≥10 cm, × today", LogY = true, YFmt = Fmt.Times, YMin = 0.8, Headroom = 2,
+            Tag = "box model · growth over today's belt objects ≥10 cm",
+        };
+        ch.Lines.Add(new("never deorbited", Palette.Red, rates, never, Markers: true));
+        if (working != null) ch.Lines.Add(new("working, deorbited at end of life", Palette.Blue, rates, working, Markers: true));
+        ch.Refs.Add(new(1, "×1 = no growth", Palette.Mute));
+        foreach (int j in new[] { 0, Array.IndexOf(rates, 50.0), Array.IndexOf(rates, 200.0), Array.IndexOf(rates, 500.0), rates.Length - 1 }.Where(j => j >= 0).Distinct())
+            ch.Notes.Add(new(rates[j], never[j], rates[j] == 0 ? $"nothing added {Fmt.Times(never[j])}" : $"{rates[j]:F0}/yr {Fmt.Times(never[j])}", Palette.Red, Dx: 12, Dy: rates[j] == 0 ? -20 : 2));
+        return (sb.ToString(), Show(ch));
+    });
 
-    private static string FormatNum(double v)
+    private async void RunOperators(object s, RoutedEventArgs e) => await RunAsync("Operators quit", (cat, i) =>
     {
-        double a = Math.Abs(v);
-        if (a >= 1e6) return (v / 1e6).ToString("0.#") + "M";
-        if (a >= 1e3) return (v / 1e3).ToString("0.#") + "k";
-        if (a >= 10 || a == 0) return v.ToString("0");
-        return v.ToString("0.##");
-    }
+        var (yr, constant, responsive, quit, rate) = Scenarios.Operators(cat.Objects, i);
+        var sb = new StringBuilder($"{rate:F0} objects a year at {i.LaunchAltKm:F0} km; operators throttle back as the risk rises and stop at {i.LossTolerance:P0}/yr.\n");
+        sb.AppendLine(double.IsNaN(quit) ? "Operators never quit within the horizon." : $"They stop launching in year {quit:F0}.");
+        sb.AppendLine($"Belt debris ≥10 cm: {constant[0]:N0} → {constant[^1]:N0} if they keep launching, → {responsive[^1]:N0} if they quit.");
+        if (!double.IsNaN(quit))
+        {
+            int q = Array.FindIndex(yr, t => t >= quit - 1e-9);
+            sb.AppendLine($"After they quit it still grows {Fmt.Times(responsive[^1] / responsive[q])}: abandoning a band doesn't save it once the cascade runs.");
+        }
+        var ch = new Chart
+        {
+            XLabel = "years", YLabel = "belt debris ≥10 cm", LogY = true,
+            Tag = $"box model · {rate:F0}/yr at {i.LaunchAltKm:F0} km{(i.WorkingSatellites ? ", working satellites" : ", never deorbited")}",
+        };
+        if (!double.IsNaN(quit)) ch.Bands.Add(new(quit, yr[^1], Palette.Alpha(Palette.Mute, 30), $"operators stop launching (yr {quit:F0})"));
+        ch.Lines.Add(new($"{rate:F0}/yr, launching throughout", Palette.Red, yr, constant));
+        ch.Lines.Add(new("responsive: operators throttle, then quit", Palette.Blue, yr, responsive));
+        return (sb.ToString(), Show(ch));
+    });
+
+    private async void RunWorking(object s, RoutedEventArgs e) => await RunAsync("Working satellites", (cat, i) =>
+    {
+        var (rates, set, g) = Scenarios.WorkingSweep(cat.Objects, i);
+        var sb = new StringBuilder($"Belt debris ≥10 cm after {i.HorizonYears:F0} yr, × today, by disposal / rocket-body / avoidance setting:\n");
+        sb.AppendLine("  " + string.Join(" | ", new[] { "per year" }.Concat(set.Select(x => x.Name.Split(' ')[0]))));
+        for (int r = 0; r < rates.Length; r++)
+            sb.AppendLine($"  {rates[r],8:F0} | " + string.Join(" | ", Enumerable.Range(0, set.Length).Select(k => Fmt.Times(g[r, k]))));
+        sb.AppendLine("\nSatellites work for the set lifetime, hold orbit, dodge tracked (≥10 cm) objects (89% can manoeuvre),");
+        sb.AppendLine("then are deorbited or left dead. Nothing dodges 1–10 cm debris; a hit there leaves a dead satellite.");
+        var colors = new[] { Palette.Red, Palette.Orange, Palette.Blue, Palette.Green, Palette.Amber };
+        var ch = new Chart
+        {
+            YLabel = $"belt debris ≥10 cm after {i.HorizonYears:F0} yr, × today", LogY = true, YFmt = Fmt.Times, BarLabel = Fmt.Times, YMin = 0.8, Headroom = 3,
+            Categories = rates.Select(r => $"{r:F0} satellites + rocket bodies a year at {i.LaunchAltKm:F0} km").ToArray(),
+            Tag = "box model · deorbited satellites / rocket bodies / conjunctions avoided",
+        };
+        for (int k = 0; k < set.Length; k++)
+        {
+            string name = set[k].Pmd < 0 ? set[k].Name : $"{set[k].Name}: {set[k].Pmd:P0} / {set[k].Rb:P0} / {set[k].Avoid:P0}";
+            if (k == set.Length - 1) name = set[k].Name;
+            ch.Bars.Add(new(name, colors[k % colors.Length], Enumerable.Range(0, rates.Length).Select(r => g[r, k]).ToArray()));
+        }
+        ch.Refs.Add(new(1, "", Palette.Mute));
+        return (sb.ToString(), Show(ch));
+    });
+
+    private async void RunRemoval(object s, RoutedEventArgs e) => await RunAsync("Removal", (cat, i) =>
+    {
+        var (rem, none, launched, rate, today) = Scenarios.Removal(cat.Objects, i);
+        double Flat(double[] g) { for (int k = 1; k < rem.Length; k++) if (g[k] <= 1 && g[k - 1] > 1) return rem[k - 1] + (g[k - 1] - 1) / (g[k - 1] - g[k]) * (rem[k] - rem[k - 1]); return g[0] <= 1 ? 0 : double.NaN; }
+        double f0 = Flat(none), f1 = Flat(launched);
+        var sb = new StringBuilder($"Belt debris ≥10 cm after {i.HorizonYears:F0} yr, × today ({today:N0}), vs large dead objects removed a year (riskiest first):\n");
+        sb.AppendLine($"  removed/yr | nothing added | {rate:F0}/yr added");
+        for (int k = 0; k < rem.Length; k++) sb.AppendLine($"  {rem[k],10:F0} | {Fmt.Times(none[k]),13} | {Fmt.Times(launched[k]),10}");
+        sb.AppendLine($"\nHolds the belt flat: ~{(double.IsNaN(f0) ? ">100" : f0.ToString("F0"))}/yr with nothing added, ~{(double.IsNaN(f1) ? ">100" : f1.ToString("F0"))}/yr with {rate:F0}/yr added.");
+        var ch = new Chart
+        {
+            XLabel = "large dead objects removed per year (riskiest first)", YLabel = $"belt debris ≥10 cm after {i.HorizonYears:F0} yr, × today",
+            YFmt = Fmt.Times, YMin = 0, Tag = $"box model · removals from year 0{(i.WorkingSatellites ? " · working satellites" : "")}",
+        };
+        ch.Lines.Add(new($"{rate:F0}/yr added{(i.WorkingSatellites ? "" : ", never deorbited")}", Palette.Red, rem, launched, Markers: true));
+        ch.Lines.Add(new("nothing added", Palette.Green, rem, none, Markers: true));
+        ch.Refs.Add(new(1, "×1 = held flat", Palette.Mute));
+        if (!double.IsNaN(f0)) ch.Notes.Add(new(f0, 1, $"~{f0:F0}/yr holds it flat", Palette.Green));
+        if (!double.IsNaN(f1)) ch.Notes.Add(new(f1, 1, $"~{f1:F0}/yr with {rate:F0}/yr added", Palette.Red));
+        return (sb.ToString(), Show(ch));
+    });
+
+    // ---------------------------------------------------------------- helpers -----------------------
+
+    private static string Pct(double f) => f >= 0.1 ? $"+{f * 100:0}%" : f >= 0.001 ? $"+{f * 100:0.0#}%" : $"{(f >= 0 ? "+" : "")}{f * 100:0.###}%";
+
+    private static string Launches(ScenarioInputs i) => i.LaunchRatePerYear <= 0 ? "nothing added"
+        : $"{i.LaunchRatePerYear:F0}/yr at {i.LaunchAltKm:F0} km{(i.WorkingSatellites ? ", working" : ", never deorbited")}";
 }

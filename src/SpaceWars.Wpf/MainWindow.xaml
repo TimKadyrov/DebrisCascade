@@ -78,9 +78,9 @@
                     <TextBox x:Name="RelVelMS" Text="10000"/>
 
                     <TextBlock Style="{StaticResource Head}" Text="ENVIRONMENT"/>
-                    <TextBlock Style="{StaticResource Lbl}" Text="Launch rate (intacts/yr)"/>
+                    <TextBlock Style="{StaticResource Lbl}" Text="Objects added a year (satellites + rocket bodies)"/>
                     <TextBox x:Name="LaunchRate" Text="0"/>
-                    <TextBlock Style="{StaticResource Lbl}" Text="Launch band altitude (km)"/>
+                    <TextBlock Style="{StaticResource Lbl}" Text="Altitude they are added at (km)"/>
                     <TextBox x:Name="LaunchAlt" Text="900"/>
                     <CheckBox x:Name="Responsive" Content="Responsive launch (operators quit)"/>
                     <TextBlock Style="{StaticResource Lbl}" Text="Loss tolerance (fraction/yr)"/>
@@ -114,12 +114,28 @@
             <TextBlock DockPanel.Dock="Top" Text="SpaceWars · Barrel-of-Nails LEO Debris Model"
                        FontSize="18" FontWeight="SemiBold" Margin="0,2,0,10"/>
             <WrapPanel x:Name="Buttons" DockPanel.Dock="Top" Margin="0,0,0,10">
-                <Button x:Name="BtnFlux" Content="Lethality &amp; Flux" Click="RunFlux"/>
-                <Button x:Name="BtnEvolve" Content="Evolve (box)" Click="RunEvolve"/>
-                <Button x:Name="BtnCascade" Content="Cascade (discrete)" Click="RunCascade"/>
-                <Button x:Name="BtnConj" Content="Conjunction (cube)" Click="RunConjunction"/>
-                <Button x:Name="BtnTip" Content="Tipping sweep" Click="RunTipping"/>
-                <Button x:Name="BtnUse" Content="Usability by altitude" Click="RunUsability"/>
+                <Button x:Name="BtnFlux" Content="Lethality &amp; Flux" Click="RunFlux" Margin="0,0,6,6"
+                        ToolTip="Single-nail lethality, drag lifetime and flux (text)"/>
+                <Button x:Name="BtnEvolve" Content="Evolve (box)" Click="RunEvolve" Margin="0,0,6,6"
+                        ToolTip="Belt debris ≥10 cm over time, with and without the barrel (box model)"/>
+                <Button x:Name="BtnCascade" Content="Cascade (discrete)" Click="RunCascade" Margin="0,0,6,6"/>
+                <Button x:Name="BtnConj" Content="Conjunction (cube)" Click="RunConjunction" Margin="0,0,6,6"/>
+                <Button x:Name="BtnUse" Content="Usability by altitude" Click="RunUsability" Margin="0,0,6,6"
+                        ToolTip="Collision risk per satellite by altitude, and how long debris stays"/>
+                <Button x:Name="BtnBarrels" Content="Scale check (barrels)" Click="RunBarrels" Margin="0,0,6,6"
+                        ToolTip="How many barrels to move the belt — vs one ASAT strike"/>
+                <Button x:Name="BtnCompare" Content="Comparison" Click="RunComparison" Margin="0,0,6,6"
+                        ToolTip="Barrel vs ASAT vs traffic on one measure"/>
+                <Button x:Name="BtnTip" Content="Tipping sweep" Click="RunTipping" Margin="0,0,6,6"
+                        ToolTip="Belt growth vs objects added a year at the launch altitude"/>
+                <Button x:Name="BtnOps" Content="Operators quit" Click="RunOperators" Margin="0,0,6,6"
+                        ToolTip="Launching throughout vs operators throttling back and quitting"/>
+                <Button x:Name="BtnWorking" Content="Working satellites" Click="RunWorking" Margin="0,0,6,6"
+                        ToolTip="Disposal and avoidance settings: never deorbited, poor, today's practice, best, yours"/>
+                <Button x:Name="BtnRemoval" Content="Removal" Click="RunRemoval" Margin="0,0,6,6"
+                        ToolTip="Belt growth vs large dead objects removed a year"/>
+                <Button x:Name="BtnSave" Content="Save PNG" Click="SavePng" Margin="12,0,6,6" Background="#15314A"
+                        ToolTip="Save the current chart (and its text) as a PNG"/>
             </WrapPanel>
             <Border DockPanel.Dock="Bottom" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
                     BorderThickness="1" CornerRadius="8" Height="220" Margin="0,10,0,0">
@@ -128,7 +144,7 @@
                          VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap"
                          HorizontalScrollBarVisibility="Auto" Padding="10"/>
             </Border>
-            <Border Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
+            <Border x:Name="ChartPanel" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
                     BorderThickness="1" CornerRadius="8">
                 <Grid>
                     <Canvas x:Name="ChartCanvas" ClipToBounds="True"/>
