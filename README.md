@@ -1,5 +1,15 @@
 # DebrisCascade — Barrel-of-Nails LEO Debris Model
 
+> [!IMPORTANT]
+> **Purpose and responsible use.** This is a purely academic assessment: a thought experiment
+> answered with numbers, not a plan. It models how orbital debris evolves; it does not help anyone
+> put anything in orbit. Results are order-of-magnitude estimates from a simplified model, not
+> forecasts. Don't try this at home: putting debris in orbit on purpose endangers every satellite
+> up there, and it goes against the
+> [UN space debris guidelines](https://www.unoosa.org/documents/pdf/spacelaw/sd/COPUOS-GuidelinesE.pdf)
+> that spacefaring nations have endorsed. Please don't extend the tool into planning or targeting,
+> such as optimising a release to maximise damage or aiming at specific satellites or operators.
+
 An academic risk assessment: *can a launched "barrel of nails" render low-Earth orbit
 unusable via Kessler syndrome?* The tool pulls the real satellite catalog, propagates it
 on the GPU, and runs the collision/breakup/cascade physics to answer the question with
