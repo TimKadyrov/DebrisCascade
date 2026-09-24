@@ -11,8 +11,8 @@
 >
 > **Conclusion.** With responsible policies in place, low-Earth orbit stays usable: satellites and
 > rocket bodies deorbited at the end of their life, which is the decisive lever, and the riskiest
-> large dead objects removed, about nine a year. Collision avoidance helps working satellites but
-> on its own barely slows the growth of debris.
+> large dead objects removed, about nine a year. Collision avoidance helps minimise collision risks
+> for working satellites, while deorbiting and removal keep the debris itself down.
 
 An academic risk assessment: *can a launched "barrel of nails" render low-Earth orbit
 unusable via Kessler syndrome?* The tool pulls the real satellite catalog, propagates it
