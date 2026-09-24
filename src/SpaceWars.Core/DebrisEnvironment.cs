@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace SpaceWars.Core;
 
@@ -22,4 +24,15 @@ public static class DebrisEnvironment
              + 0.45 * G(altKm, 1450, 130)  // secondary high band
              + 0.35 * G(altKm, 550, 70);   // modern low-altitude constellation band
     }
+
+    /// <summary>Size of the modelled large-object belt (dead payloads, rocket bodies) the engines seed.</summary>
+    public const double ModelledLargeBeltTotal = 8_000;
+
+    /// <summary>
+    /// The modelled large-object belt stands in for derelicts a catalog lacks (e.g. CelesTrak's
+    /// "active" group). A catalog that already has them — the full on-orbit catalog, with thousands
+    /// of rocket bodies and debris — gets none, so nothing is counted twice.
+    /// </summary>
+    public static double LargeBeltFor(IReadOnlyList<CatalogObject> objects)
+        => objects.Count(o => o.ObjectType is "R/B" or "DEB") > 1000 ? 0 : ModelledLargeBeltTotal;
 }

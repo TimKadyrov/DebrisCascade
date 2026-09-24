@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using SpaceWars.Core;
 using Xunit;
 
@@ -37,7 +38,7 @@ public class SatcatTests
         var map = SpaceTrackClient.ParseSatcatCsv(new StringReader(SpaceTrackCsv));
         Assert.Equal(4, map.Count);
         Assert.Equal("R/B", map[1].ObjectType);          // "ROCKET BODY" → R/B
-        Assert.Equal(5.0, map[1].RcsM2!.Value, 3);        // LARGE
+        Assert.Equal(12.0, map[1].RcsM2!.Value, 3);       // LARGE rocket body → 12 m² (~1.5 t), not the 5 m² midpoint
         Assert.Equal("PAY", map[99999].ObjectType);
         Assert.Equal(0.05, map[99999].RcsM2!.Value, 3);   // SMALL
         Assert.Equal(0.5, map[77777].RcsM2!.Value, 3);    // MEDIUM
@@ -55,7 +56,19 @@ public class SatcatTests
         var (payMass, _) = Satcat.DeriveMassArea(map[99999]);
         Assert.InRange(payMass, 1, 40);          // small ~0.1 m^2 payload
 
-        var (_, debArea) = Satcat.DeriveMassArea(map[88888]);
+        var (debMass, debArea) = Satcat.DeriveMassArea(map[88888]);
         Assert.Equal(0.3, debArea, 3);           // type default for missing RCS
+        // Debris is a breakup fragment: far lighter than an intact object of the same size.
+        Assert.True(debMass < 0.25 * BreakupModel.IntactMassFromLc(BreakupModel.LcFromArea(0.3)), $"debris {debMass:F2} kg");
+    }
+
+    [Fact]
+    public void LargeBelt_OnlyForCatalogsWithoutDerelicts()
+    {
+        var el = OrbitalElements.FromMeanMotionRevPerDay(14.2, 0.001, 1.0, 0, 0, 0);
+        var active = Enumerable.Repeat(new CatalogObject(el, 300, 3, true, "PAY"), 5000).ToList();
+        var full = active.Concat(Enumerable.Repeat(new CatalogObject(el, 1, 0.05, false, "DEB"), 3000)).ToList();
+        Assert.Equal(DebrisEnvironment.ModelledLargeBeltTotal, DebrisEnvironment.LargeBeltFor(active));
+        Assert.Equal(0, DebrisEnvironment.LargeBeltFor(full));
     }
 }

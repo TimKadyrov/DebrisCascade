@@ -21,68 +21,24 @@ dataDir = Path.GetFullPath(dataDir);
 
 Console.WriteLine("=== SpaceWars: barrel-of-nails LEO flux assessment ===\n");
 
-// 1. Load the background catalog (live CelesTrak, cached, or a local file).
-List<Tle> tles;
-if (opts.OfflineFile is not null)
+// 1. Load the catalog: every object on orbit (Space-Track), the CelesTrak group, or a local file.
+Console.WriteLine($"Loading catalog (cache dir: {dataDir}) ...");
+CatalogBundle bundle;
+try { bundle = await Scenarios.LoadCatalogAsync(dataDir, opts.Group, includeDebris: !opts.ActiveOnly, offlineFile: opts.OfflineFile); }
+catch (Exception ex)
 {
-    Console.WriteLine($"Loading catalog from file: {opts.OfflineFile}");
-    tles = CelesTrakClient.LoadFromFile(opts.OfflineFile);
+    Console.Error.WriteLine($"  catalog unavailable: {ex.Message}");
+    return 1;
 }
-else
-{
-    Console.WriteLine($"Fetching CelesTrak group '{opts.Group}' (cache dir: {dataDir}) ...");
-    try
-    {
-        var client = new CelesTrakClient(dataDir);
-        tles = await client.GetGroupAsync(opts.Group);
-    }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine($"  catalog unavailable: {ex.Message}");
-        return 1;
-    }
-}
-
-// SATCAT for per-object mass/area (RCS-derived). Space-Track (fuller RCS) if credentials are
-// set via SPACETRACK_USER/SPACETRACK_PASS, otherwise CelesTrak; CelesTrak is the fallback.
-Dictionary<int, SatcatRecord> satcat = new(); string satSrc = "none";
-if (opts.OfflineFile is null)
-{
-    try
-    {
-        if (SpaceTrackClient.HasCredentials) { satcat = await new SpaceTrackClient(dataDir).GetSatcatAsync(); satSrc = "Space-Track"; }
-        else { satcat = await new CelesTrakClient(dataDir).GetSatcatAsync(); satSrc = "CelesTrak"; }
-    }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine($"  primary SATCAT source failed ({ex.Message});");
-        try { satcat = await new CelesTrakClient(dataDir).GetSatcatAsync(); satSrc = "CelesTrak (fallback)"; }
-        catch (Exception ex2) { Console.Error.WriteLine($"  SATCAT unavailable ({ex2.Message}); using default masses."); }
-    }
-}
-
-int withRcs = 0;
-var catalogObjects = new List<CatalogObject>();
-foreach (var t in tles)
-{
-    var el = t.ToElements();
-    if (!(el.PerigeeAltitude < 2000 && el.PerigeeAltitude > 100)) continue;
-    double mass = 180, area = 1.78; bool intact = true;
-    if (satcat.TryGetValue(t.NoradId, out var rec))
-    {
-        (mass, area) = Satcat.DeriveMassArea(rec);
-        intact = Satcat.IsIntact(rec.ObjectType);
-        if (rec.RcsM2.HasValue) withRcs++;
-    }
-    catalogObjects.Add(new CatalogObject(el, mass, area, intact));
-}
+var catalogObjects = bundle.Objects.ToList();
 var catalog = catalogObjects.Select(o => o.Elements).ToList();
-double meanArea = catalogObjects.Count > 0 ? catalogObjects.Average(o => o.AreaM2) : 5.0;
-double meanMass = catalogObjects.Count > 0 ? catalogObjects.Average(o => o.MassKg) : 180.0;
-Console.WriteLine($"  loaded {tles.Count:N0} objects, {catalog.Count:N0} in LEO (<2000 km perigee).");
-Console.WriteLine($"  SATCAT ({satSrc}): {satcat.Count:N0} records, {withRcs:N0} of the LEO set carry RCS " +
-                  $"({(catalog.Count > 0 ? 100.0 * withRcs / catalog.Count : 0):F0}%); " +
-                  $"derived mean cross-section {meanArea:F2} m², mean mass {meanMass:F0} kg.\n");
+int withRcs = bundle.WithRcs; string satSrc = bundle.Source;
+double meanArea = bundle.MeanAreaM2, meanMass = bundle.MeanMassKg;
+Console.WriteLine($"  {bundle.Source}");
+Console.WriteLine($"  loaded {bundle.TotalTracked:N0} objects, {catalog.Count:N0} in LEO (<2000 km perigee): " +
+                  string.Join(", ", bundle.CountByType.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Value:N0} {kv.Key}")) + ".");
+Console.WriteLine($"  {withRcs:N0} carry RCS ({(catalog.Count > 0 ? 100.0 * withRcs / catalog.Count : 0):F0}%); " +
+                  $"payload mean cross-section {meanArea:F2} m², mean mass {meanMass:F0} kg.\n");
 
 // 2. Configure and deploy the barrel.
 var nail = new NailSpec();
@@ -512,6 +468,16 @@ if (opts.Charts)
     Console.WriteLine($"   wrote {Path.Combine(dataDir, "charts.json")}\n");
 }
 
+// 4h'. Every number and chart series the presentation quotes, from one run.
+if (opts.Deck)
+{
+    Console.WriteLine("--- Deck numbers (data/deck_numbers.json) ---");
+    var deck = DeckExport.Compute(bundle, nail, opts.NailCount, s => Console.WriteLine(s));
+    string deckPath = Path.Combine(dataDir, "deck_numbers.json");
+    File.WriteAllText(deckPath, System.Text.Json.JsonSerializer.Serialize(deck, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    Console.WriteLine($"   wrote {deckPath}\n");
+}
+
 // 4i. Cube-method calibration: geometric (cube) vs well-mixed (kinetic) rate.
 if (opts.Calibrate)
 {
@@ -598,6 +564,8 @@ file sealed class CliOptions
     public bool Conjunction;
     public bool Charts;
     public bool Calibrate;
+    public bool Deck;
+    public bool ActiveOnly;
 
     public static CliOptions Parse(string[] args)
     {
@@ -615,6 +583,8 @@ file sealed class CliOptions
             if (a == "--conjunction") { o.Conjunction = true; continue; }
             if (a == "--charts") { o.Charts = true; continue; }
             if (a == "--calibrate") { o.Calibrate = true; continue; }
+            if (a == "--deck") { o.Deck = true; continue; }
+            if (a == "--active-only") { o.ActiveOnly = true; continue; }
             if (i + 1 >= args.Length) break; // remaining flags need a value
             switch (a)
             {

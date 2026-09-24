@@ -83,10 +83,13 @@ public sealed class ConjunctionCascade
     }
 
     /// <summary>Seed observed objects with SATCAT-derived masses/areas (per object).</summary>
+    /// <param name="backgroundLargeTotal">Modelled large-object belt; negative = automatic (none when
+    /// the catalog already holds real derelicts and debris, see <see cref="DebrisEnvironment.LargeBeltFor"/>).</param>
     public void SeedFromCatalog(IReadOnlyList<CatalogObject> objects,
-        double backgroundSmallTotal = 1_000_000, int backgroundSuperParticles = 3000, double backgroundLargeTotal = 8_000,
+        double backgroundSmallTotal = 1_000_000, int backgroundSuperParticles = 3000, double backgroundLargeTotal = -1,
         int nShell = 36, double minAltKm = 200, double binKm = 50)
     {
+        if (backgroundLargeTotal < 0) backgroundLargeTotal = DebrisEnvironment.LargeBeltFor(objects);
         foreach (var o in objects)
         {
             double alt = o.Elements.SemiMajorAxis - Constants.EarthRadiusKm;
@@ -137,6 +140,24 @@ public sealed class ConjunctionCascade
 
     public double TotalObjects() { double t = 0; for (int i = 0; i < _w.Count; i++) if (_alive[i]) t += _w[i]; return t; }
     public double TotalNails() { double t = 0; for (int i = 0; i < _w.Count; i++) if (_alive[i] && _isNail[i]) t += _w[i]; return t; }
+    private static readonly double TrackableAreaM2 = BreakupModel.AreaFromLc(0.1);
+    /// <summary>Objects ≥10 cm (by cross-section; nails excluded) — the catalogued/catalogable population.</summary>
+    public double TotalTrackable() => TotalTrackable(double.NegativeInfinity, double.PositiveInfinity);
+    /// <summary>Objects ≥10 cm with mean altitude in [lo, hi) km.</summary>
+    public double TotalTrackable(double loKm, double hiKm)
+    {
+        double t = 0;
+        for (int i = 0; i < _w.Count; i++)
+        {
+            if (!_alive[i] || _isNail[i] || _area[i] < TrackableAreaM2) continue;
+            double alt = _els[i].SemiMajorAxis - Constants.EarthRadiusKm;
+            if (alt >= loKm && alt < hiKm) t += _w[i];
+        }
+        return t;
+    }
+    /// <summary>Altitude band [km] reported as the "belt".</summary>
+    public double BeltLoKm { get; init; } = 700;
+    public double BeltHiKm { get; init; } = 1100;
     public double TotalCrossSection() { double t = 0; for (int i = 0; i < _w.Count; i++) if (_alive[i]) t += _w[i] * _area[i]; return t; }
 
     private double NextGaussian() { double u1 = 1 - _rng.NextDouble(), u2 = 1 - _rng.NextDouble(); return Math.Sqrt(-2 * Math.Log(u1)) * Math.Cos(Constants.TwoPi * u2); }
@@ -422,7 +443,7 @@ public sealed class ConjunctionCascade
 
     public CascadeResult Run(double horizonYears = 50, double dtDays = 60)
     {
-        var yr = new List<double> { 0 }; var tot = new List<double> { TotalObjects() };
+        var yr = new List<double> { 0 }; var tot = new List<double> { TotalObjects() }; var trk = new List<double> { TotalTrackable() }; var belt = new List<double> { TotalTrackable(BeltLoKm, BeltHiKm) };
         var cs = new List<double> { TotalCrossSection() }; var cpy = new List<double> { 0 }; var nl = new List<double> { TotalNails() };
         double catAccum = 0, t = 0, nextYear = 0, doneDays = 0, totalDays = horizonYears * 365.25;
         // Last step is shortened so the run ends exactly on the horizon (and records its final year).
@@ -436,10 +457,10 @@ public sealed class ConjunctionCascade
             if (t >= nextYear + 1 - 1e-9)
             {
                 nextYear += 1;
-                yr.Add(t); tot.Add(TotalObjects()); cs.Add(TotalCrossSection()); cpy.Add(catAccum); nl.Add(TotalNails());
+                yr.Add(t); tot.Add(TotalObjects()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); cs.Add(TotalCrossSection()); cpy.Add(catAccum); nl.Add(TotalNails());
                 catAccum = 0;
             }
         }
-        return new CascadeResult { Years = yr.ToArray(), TotalObjects = tot.ToArray(), TotalCrossSection = cs.ToArray(), CatastrophicPerYear = cpy.ToArray(), SurvivingNails = nl.ToArray() };
+        return new CascadeResult { Years = yr.ToArray(), TotalObjects = tot.ToArray(), TotalCrossSection = cs.ToArray(), CatastrophicPerYear = cpy.ToArray(), SurvivingNails = nl.ToArray(), TrackableObjects = trk.ToArray(), BeltTrackableObjects = belt.ToArray() };
     }
 }

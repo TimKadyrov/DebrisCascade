@@ -8,8 +8,8 @@ namespace SpaceWars.Core;
 /// <summary>One CelesTrak SATCAT record: object type and radar cross-section (m², may be missing).</summary>
 public readonly record struct SatcatRecord(int NoradId, string ObjectType, double? RcsM2);
 
-/// <summary>A catalog object with its orbit and physically-derived mass/area (from SATCAT RCS).</summary>
-public readonly record struct CatalogObject(OrbitalElements Elements, double MassKg, double AreaM2, bool IsIntact);
+/// <summary>A catalog object with its orbit, physically-derived mass/area (from SATCAT RCS) and type (PAY, R/B, DEB, UNK).</summary>
+public readonly record struct CatalogObject(OrbitalElements Elements, double MassKg, double AreaM2, bool IsIntact, string ObjectType = "PAY");
 
 /// <summary>
 /// Loads the CelesTrak SATCAT (satcat.csv) and derives per-object mass and cross-section,
@@ -53,9 +53,12 @@ public static class Satcat
         double area = rec.RcsM2 ?? DefaultAreaForType(rec.ObjectType);
         if (area <= 0) area = DefaultAreaForType(rec.ObjectType);
 
-        // Invert the NASA area–length law A = 0.556945·Lc^2.0047, then intact mass from Lc.
+        // Invert the NASA area–length law A = 0.556945·Lc^2.0047, then mass from Lc: payloads and
+        // rocket bodies are intact; debris and unidentified objects are breakup fragments (flat,
+        // light — the breakup model's own area-to-mass ratio).
         double lc = BreakupModel.LcFromArea(area);
-        return (BreakupModel.IntactMassFromLc(lc), area);
+        double mass = IsIntact(rec.ObjectType) ? BreakupModel.IntactMassFromLc(lc) : BreakupModel.FragmentMassFromLc(lc);
+        return (mass, area);
     }
 
     public static bool IsIntact(string type) => type is "PAY" or "R/B";

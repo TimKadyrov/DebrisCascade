@@ -10,19 +10,25 @@ using System.Threading.Tasks;
 namespace SpaceWars.Core;
 
 /// <summary>
-/// Fetches SATCAT from Space-Track for fuller RCS coverage than CelesTrak's public feed.
-/// Space-Track populates the RCS_SIZE category (SMALL/MEDIUM/LARGE) for far more objects,
-/// which we map to a representative cross-section.
+/// Fetches from Space-Track: the SATCAT (fuller RCS coverage than CelesTrak's public feed —
+/// Space-Track populates the RCS_SIZE category SMALL/MEDIUM/LARGE for far more objects, which we
+/// map to a representative cross-section) and the full on-orbit GP catalog, which — unlike
+/// CelesTrak's "active" group — includes dead payloads, rocket bodies and catalogued debris.
 ///
-/// Credentials are read ONLY from the environment (SPACETRACK_USER / SPACETRACK_PASS) that the
-/// user sets — this code never prompts for or stores a password. Any failure (no credentials,
-/// login rejected, network) throws, and the caller falls back to CelesTrak.
+/// Credentials come from the environment (SPACETRACK_USER / SPACETRACK_PASS) or a generic Windows
+/// Credential Manager entry the user created; this code never prompts for, logs or stores a
+/// password. Any failure (no credentials, login rejected, network) throws, and the caller falls
+/// back to CelesTrak.
 /// </summary>
 public sealed class SpaceTrackClient(string cacheDir)
 {
     private const string LoginUrl = "https://www.space-track.org/ajaxauth/login";
     private const string SatcatQuery =
         "https://www.space-track.org/basicspacedata/query/class/satcat/predicates/NORAD_CAT_ID,OBJECT_TYPE,RCS_SIZE/format/csv";
+    // Space-Track's recommended "current catalog" query: every object not yet decayed, with an
+    // element set from the last 30 days.
+    private const string OnOrbitGpQuery =
+        "https://www.space-track.org/basicspacedata/query/class/gp/decay_date/null-val/epoch/%3Enow-30/orderby/norad_cat_id/format/3le";
 
     private static readonly string[] CredTargets = { "SPACETRACK", "spacetrack", "www.space-track.org", "space-track.org" };
 
@@ -51,20 +57,7 @@ public sealed class SpaceTrackClient(string cacheDir)
 
         if (!fresh)
         {
-            var creds = GetCredentials();
-            if (creds is null)
-                throw new InvalidOperationException("No Space-Track credentials (env SPACETRACK_USER/PASS or a generic Windows credential 'SPACETRACK').");
-            (string user, string pass) = creds.Value;
-            if (string.IsNullOrEmpty(user))
-                throw new InvalidOperationException("Space-Track username missing (the stored credential has no username).");
-
-            var handler = new HttpClientHandler { CookieContainer = new CookieContainer(), UseCookies = true };
-            using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(120) };
-
-            var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["identity"] = user, ["password"] = pass });
-            var login = await http.PostAsync(LoginUrl, form);
-            login.EnsureSuccessStatusCode();
-
+            using var http = await LoginAsync();
             string csv = await http.GetStringAsync(SatcatQuery);
             if (!csv.Contains("NORAD_CAT_ID"))
                 throw new InvalidOperationException("Space-Track login failed or returned no data.");
@@ -73,6 +66,48 @@ public sealed class SpaceTrackClient(string cacheDir)
 
         using var reader = new StreamReader(cachePath);
         return ParseSatcatCsv(reader);
+    }
+
+    /// <summary>
+    /// Every object currently on orbit — payloads (active and dead), rocket bodies and catalogued
+    /// debris — as TLEs. Cached for a day: Space-Track asks users not to pull the full GP catalog
+    /// more than about once an hour.
+    /// </summary>
+    public async Task<List<Tle>> GetOnOrbitCatalogAsync(TimeSpan? maxCacheAge = null)
+    {
+        maxCacheAge ??= TimeSpan.FromDays(1);
+        Directory.CreateDirectory(cacheDir);
+        string cachePath = Path.Combine(cacheDir, "spacetrack_onorbit.tle");
+        bool fresh = File.Exists(cachePath) && DateTime.UtcNow - File.GetLastWriteTimeUtc(cachePath) < maxCacheAge;
+
+        if (!fresh)
+        {
+            using var http = await LoginAsync();
+            string tle = await http.GetStringAsync(OnOrbitGpQuery);
+            if (tle.Length < 1000 || !tle.Contains("\n1 "))
+                throw new InvalidOperationException("Space-Track login failed or returned no element sets.");
+            await File.WriteAllTextAsync(cachePath, tle);
+        }
+
+        using var reader = new StreamReader(cachePath);
+        return Tle.LoadMany(reader);
+    }
+
+    private static async Task<HttpClient> LoginAsync()
+    {
+        var creds = GetCredentials();
+        if (creds is null)
+            throw new InvalidOperationException("No Space-Track credentials (env SPACETRACK_USER/PASS or a generic Windows credential 'SPACETRACK').");
+        (string user, string pass) = creds.Value;
+        if (string.IsNullOrEmpty(user))
+            throw new InvalidOperationException("Space-Track username missing (the stored credential has no username).");
+
+        var handler = new HttpClientHandler { CookieContainer = new CookieContainer(), UseCookies = true };
+        var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(180) };
+        var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["identity"] = user, ["password"] = pass });
+        var login = await http.PostAsync(LoginUrl, form);
+        if (!login.IsSuccessStatusCode) { http.Dispose(); login.EnsureSuccessStatusCode(); }
+        return http;
     }
 
     /// <summary>Parse the Space-Track satcat CSV (NORAD_CAT_ID, OBJECT_TYPE, RCS_SIZE).</summary>
@@ -93,7 +128,11 @@ public sealed class SpaceTrackClient(string cacheDir)
             if (f.Length <= iNorad) continue;
             if (!int.TryParse(f[iNorad].Trim('"', ' '), NumberStyles.Integer, CultureInfo.InvariantCulture, out int norad)) continue;
             string type = NormalizeType(iType >= 0 && iType < f.Length ? f[iType].Trim('"', ' ') : "");
-            double? rcs = iSize >= 0 && iSize < f.Length ? AreaFromRcsSize(f[iSize].Trim('"', ' ')) : null;
+            string size = iSize >= 0 && iSize < f.Length ? f[iSize].Trim('"', ' ') : "";
+            double? rcs = AreaFromRcsSize(size);
+            // "LARGE" only says > 1 m². For a rocket body the 5 m² midpoint gives ~0.5 t, while
+            // LEO upper stages are 1.4–9 t; 12 m² (the rocket-body default) gives ~1.5 t.
+            if (type == "R/B" && size.Equals("LARGE", StringComparison.OrdinalIgnoreCase)) rcs = 12.0;
             map[norad] = new SatcatRecord(norad, type, rcs);
         }
         return map;

@@ -20,6 +20,11 @@ public sealed class EvolutionResult
     public required double[] CatastrophicPerYear;  // catastrophic collisions in that year
     public required double[] SurvivingNails;       // nails still on orbit
     public double[] LaunchFraction = [];           // fraction of nominal launch actually flown (responsive mode)
+    /// <summary>Objects ≥10 cm (the catalogued/catalogable population — the standard Kessler metric).
+    /// <see cref="TotalObjects"/> is dominated by the modelled 1–10 cm field.</summary>
+    public double[] TrackableObjects = [];
+    /// <summary>Objects ≥10 cm in the belt (default 700–1100 km) — where a cascade can persist.</summary>
+    public double[] BeltTrackableObjects = [];
 }
 
 /// <summary>
@@ -72,6 +77,11 @@ public sealed class KesslerEvolution
     /// multiplies the small population fast, so this is the model's main sensitivity knob.
     /// </summary>
     public double CrateringEjectaMinLcM { get; init; } = 0.0;
+
+    /// <summary>Altitude band [km] reported as the "belt" (<see cref="EvolutionResult.BeltTrackableObjects"/>).</summary>
+    public double BeltLoKm { get; init; } = 700;
+    public double BeltHiKm { get; init; } = 1100;
+
     private double[]? _spreadKernel;
     private int _spreadSpan;
 
@@ -151,9 +161,12 @@ public sealed class KesslerEvolution
     }
 
     /// <summary>Seed observed objects with SATCAT-derived masses, mapped to the nearest size class.</summary>
+    /// <param name="backgroundLargeTotal">Modelled large-object belt; negative = automatic (none when
+    /// the catalog already holds real derelicts and debris, see <see cref="DebrisEnvironment.LargeBeltFor"/>).</param>
     public void SeedFromCatalog(IReadOnlyList<CatalogObject> objects,
-        double backgroundSmallTotal = 1_000_000, double backgroundLargeTotal = 8_000)
+        double backgroundSmallTotal = 1_000_000, double backgroundLargeTotal = -1)
     {
+        if (backgroundLargeTotal < 0) backgroundLargeTotal = DebrisEnvironment.LargeBeltFor(objects);
         foreach (var o in objects)
         {
             int s = ShellOf(o.Elements.SemiMajorAxis - Constants.EarthRadiusKm);
@@ -199,12 +212,41 @@ public sealed class KesslerEvolution
         if (s >= 0) _n[s, NailClass] += nailCount;
     }
 
+    /// <summary>
+    /// Inject a one-off breakup — an ASAT strike or a large accidental collision — of a
+    /// <paramref name="targetKg"/> object hit by a <paramref name="projectileKg"/> one at the given
+    /// altitude. Its breakup-model fragments spread across neighbouring shells like any collision's.
+    /// </summary>
+    public void InjectBreakup(double altKm, double targetKg, double projectileKg)
+    {
+        int s = ShellOf(altKm); if (s < 0) return;
+        bool cat = Lethality.IsCatastrophic(projectileKg, RelVelMetersPerSec, targetKg);
+        double meff = BreakupModel.EffectiveMass(targetKg, projectileKg, RelVelMetersPerSec);
+        double avail = cat ? targetKg + projectileKg : Math.Min(targetKg, 50.0 * projectileKg);
+        DepositFragments(_n, s, meff, 1.0, avail);
+    }
+
     public double TotalDebris()
     {
         double t = 0;
         for (int s = 0; s < _nShell; s++) for (int c = 0; c < SizeClassCount; c++) t += _n[s, c];
         return t;
     }
+    /// <summary>Objects ≥10 cm across LEO (size classes whose lower edge is ≥10 cm; nails excluded).</summary>
+    public double TotalTrackable() => TotalTrackable(double.NegativeInfinity, double.PositiveInfinity);
+
+    /// <summary>Objects ≥10 cm in shells whose mid-altitude lies in [lo, hi) km.</summary>
+    public double TotalTrackable(double loKm, double hiKm)
+    {
+        double t = 0;
+        for (int s = 0; s < _nShell; s++)
+        {
+            if (_midAlt[s] < loKm || _midAlt[s] >= hiKm) continue;
+            for (int c = 0; c < SizeClassCount; c++) if (_cls[c].LcLoM >= 0.1 - 1e-12) t += _n[s, c];
+        }
+        return t;
+    }
+
     public double TotalNails()
     {
         double t = 0; for (int s = 0; s < _nShell; s++) t += _n[s, NailClass]; return t;
@@ -383,11 +425,11 @@ public sealed class KesslerEvolution
     /// <summary>Run to the horizon, recording yearly snapshots.</summary>
     public EvolutionResult Run(double horizonYears = 50, double dtDays = 10)
     {
-        var years = new List<double>(); var tot = new List<double>();
+        var years = new List<double>(); var tot = new List<double>(); var trk = new List<double>(); var belt = new List<double>();
         var catPy = new List<double>(); var nails = new List<double>(); var lf = new List<double>();
 
         double catAccum = 0, nextYear = 0; double t = 0, doneDays = 0, totalDays = horizonYears * 365.25;
-        years.Add(0); tot.Add(TotalDebris()); catPy.Add(0); nails.Add(TotalNails()); lf.Add(_lastThrottle);
+        years.Add(0); tot.Add(TotalDebris()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); catPy.Add(0); nails.Add(TotalNails()); lf.Add(_lastThrottle);
 
         // Last step is shortened so the run ends exactly on the horizon (and records its final year).
         while (doneDays < totalDays - 1e-9)
@@ -398,7 +440,7 @@ public sealed class KesslerEvolution
             if (t >= nextYear + 1 - 1e-9)
             {
                 nextYear += 1;
-                years.Add(t); tot.Add(TotalDebris()); catPy.Add(catAccum); nails.Add(TotalNails()); lf.Add(_lastThrottle);
+                years.Add(t); tot.Add(TotalDebris()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); catPy.Add(catAccum); nails.Add(TotalNails()); lf.Add(_lastThrottle);
                 catAccum = 0;
             }
         }
@@ -406,7 +448,7 @@ public sealed class KesslerEvolution
         {
             Years = years.ToArray(), TotalObjects = tot.ToArray(),
             CatastrophicPerYear = catPy.ToArray(), SurvivingNails = nails.ToArray(),
-            LaunchFraction = lf.ToArray(),
+            LaunchFraction = lf.ToArray(), TrackableObjects = trk.ToArray(), BeltTrackableObjects = belt.ToArray(),
         };
     }
 }

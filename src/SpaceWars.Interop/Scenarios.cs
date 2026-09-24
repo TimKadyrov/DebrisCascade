@@ -31,8 +31,13 @@ public sealed class CatalogBundle
     public required string Source { get; init; }
     public int TotalTracked { get; init; }
     public int WithRcs { get; init; }
+    /// <summary>Mean cross-section / mass of the <i>payloads</i> — the stand-in operational satellite.</summary>
     public double MeanAreaM2 { get; init; }
     public double MeanMassKg { get; init; }
+    /// <summary>True when the orbits include dead payloads, rocket bodies and catalogued debris.</summary>
+    public bool IncludesDebris { get; init; }
+    /// <summary>LEO object counts by SATCAT type (PAY, R/B, DEB, UNK).</summary>
+    public IReadOnlyDictionary<string, int> CountByType { get; init; } = new Dictionary<string, int>();
 }
 
 /// <summary>Orchestrates the model runs from a set of inputs — the reusable analysis layer.</summary>
@@ -41,17 +46,44 @@ public static class Scenarios
     private static NailSpec MakeNail(ScenarioInputs i) =>
         new() { LengthM = i.NailLengthMm / 1000.0, DiameterM = i.NailDiameterMm / 1000.0 };
 
-    public static async Task<CatalogBundle> LoadCatalogAsync(string dataDir, string group = "active")
+    /// <summary>
+    /// Load the simulation catalog (LEO: perigee 100–2000 km) with SATCAT-derived masses and areas.
+    /// With <paramref name="includeDebris"/> and Space-Track credentials the orbits are every object on
+    /// orbit — payloads (active and dead), rocket bodies and catalogued debris. Otherwise they are the
+    /// CelesTrak <paramref name="group"/> (default "active": active satellites only), and the engines'
+    /// modelled large-object belt stands in for derelicts. <paramref name="offlineFile"/> loads a local
+    /// TLE file instead, with no SATCAT.
+    /// </summary>
+    public static async Task<CatalogBundle> LoadCatalogAsync(string dataDir, string group = "active",
+        bool includeDebris = true, string? offlineFile = null)
     {
-        var tles = await new CelesTrakClient(dataDir).GetGroupAsync(group);
-
-        Dictionary<int, SatcatRecord> satcat = new(); string src = "none";
-        try
+        List<Tle> tles; string orbitSrc; bool full = false;
+        if (offlineFile is not null) { tles = CelesTrakClient.LoadFromFile(offlineFile); orbitSrc = $"file {System.IO.Path.GetFileName(offlineFile)}"; }
+        else if (includeDebris && SpaceTrackClient.HasCredentials)
         {
-            if (SpaceTrackClient.HasCredentials) { satcat = await new SpaceTrackClient(dataDir).GetSatcatAsync(); src = "Space-Track"; }
-            else { satcat = await new CelesTrakClient(dataDir).GetSatcatAsync(); src = "CelesTrak"; }
+            try { tles = await new SpaceTrackClient(dataDir).GetOnOrbitCatalogAsync(); orbitSrc = "Space-Track on-orbit catalog"; full = true; }
+            catch (Exception ex)
+            {
+                tles = await new CelesTrakClient(dataDir).GetGroupAsync(group);
+                orbitSrc = $"CelesTrak '{group}' (Space-Track catalog unavailable: {ex.Message})";
+            }
         }
-        catch { try { satcat = await new CelesTrakClient(dataDir).GetSatcatAsync(); src = "CelesTrak"; } catch { src = "none"; } }
+        else { tles = await new CelesTrakClient(dataDir).GetGroupAsync(group); orbitSrc = $"CelesTrak '{group}'"; }
+
+        Dictionary<int, SatcatRecord> satcat = new(); string satSrc = "none";
+        if (offlineFile is null)
+        {
+            try
+            {
+                if (SpaceTrackClient.HasCredentials) { satcat = await new SpaceTrackClient(dataDir).GetSatcatAsync(); satSrc = "Space-Track"; }
+                else { satcat = await new CelesTrakClient(dataDir).GetSatcatAsync(); satSrc = "CelesTrak"; }
+            }
+            catch (Exception ex)
+            {
+                try { satcat = await new CelesTrakClient(dataDir).GetSatcatAsync(); satSrc = $"CelesTrak (Space-Track SATCAT failed: {ex.Message})"; }
+                catch { satSrc = "none — default masses"; }
+            }
+        }
 
         int withRcs = 0;
         var objs = new List<CatalogObject>();
@@ -59,15 +91,23 @@ public static class Scenarios
         {
             var el = t.ToElements();
             if (!(el.PerigeeAltitude < 2000 && el.PerigeeAltitude > 100)) continue;
-            double mass = 180, area = 1.78; bool intact = true;
-            if (satcat.TryGetValue(t.NoradId, out var rec)) { (mass, area) = Satcat.DeriveMassArea(rec); intact = Satcat.IsIntact(rec.ObjectType); if (rec.RcsM2.HasValue) withRcs++; }
-            objs.Add(new CatalogObject(el, mass, area, intact));
+            double mass = 180, area = 1.78; bool intact = true; string type = full ? "UNK" : "PAY";
+            if (satcat.TryGetValue(t.NoradId, out var rec))
+            {
+                (mass, area) = Satcat.DeriveMassArea(rec); intact = Satcat.IsIntact(rec.ObjectType); type = rec.ObjectType;
+                if (rec.RcsM2.HasValue) withRcs++;
+            }
+            objs.Add(new CatalogObject(el, mass, area, intact, type));
         }
+        var pay = objs.Where(o => o.ObjectType == "PAY").ToList();
+        if (pay.Count == 0) pay = objs;
         return new CatalogBundle
         {
-            Objects = objs, Source = src, TotalTracked = tles.Count, WithRcs = withRcs,
-            MeanAreaM2 = objs.Count > 0 ? objs.Average(o => o.AreaM2) : 5.0,
-            MeanMassKg = objs.Count > 0 ? objs.Average(o => o.MassKg) : 180.0,
+            Objects = objs, Source = $"{orbitSrc}; SATCAT: {satSrc}", TotalTracked = tles.Count, WithRcs = withRcs,
+            MeanAreaM2 = pay.Count > 0 ? pay.Average(o => o.AreaM2) : 5.0,
+            MeanMassKg = pay.Count > 0 ? pay.Average(o => o.MassKg) : 180.0,
+            IncludesDebris = full,
+            CountByType = objs.GroupBy(o => o.ObjectType).ToDictionary(g => g.Key, g => g.Count()),
         };
     }
 
