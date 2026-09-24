@@ -1,4 +1,4 @@
-# DebrisCascade — Barrel-of-Nails LEO Debris Model
+# DebrisCascade — Debris Cascade Modelling of Low-Earth Orbit
 
 > [!IMPORTANT]
 > **Purpose and responsible use.** This is a purely academic assessment: a valid concern for the
@@ -14,20 +14,25 @@
 > large dead objects removed, about nine a year. Collision avoidance helps minimise collision risks
 > for working satellites, while deorbiting and removal keep the debris itself down.
 
-An academic risk assessment: *can a launched "barrel of nails" render low-Earth orbit
-unusable via Kessler syndrome?* The tool pulls the real satellite catalog, propagates it
-on the GPU, and runs the collision/breakup/cascade physics to answer the question with
-numbers instead of intuition.
+A model of how the debris population of low-Earth orbit evolves, and what pushes it toward a
+Kessler cascade. It takes the real satellite catalog, propagates every object on the GPU, and runs
+collisions, fragmentation (NASA Standard Breakup Model), drag, launches, explosions, removal and
+working satellites through three independent cascade engines. Scenarios are built by adding
+elements to that environment: launch traffic with or without disposal, active debris removal,
+explosions, a large breakup such as a missile strike, or a barrel of nails dumped in orbit.
 
-**Headline finding.** A single barrel of nails is a mission-kill weapon and a persistent
-nuisance at high altitude, but it does **not** trigger Kessler syndrome or render LEO
-unusable. LEO's debris belt (700–1,100 km) *already grows slowly on its own*; whether it runs
-away is governed by **launch and removal policy**, against which a barrel of nails is a
-rounding error (1,000 barrels add ~25% to the belt's ≥10 cm population in 50 years; ~9
-removals a year hold it flat). Disposal reliability is the lever: 500 satellites and rocket bodies
-a year left dead at 900 km grow the belt ×60 in 50 years, but with working satellites deorbited at
-today's 90% rate, the same traffic grows it only ×4.8. Rerun from NASA's own 2006 starting point,
-the cube engine comes close to LEGEND's 200-year collision count: 12.8 catastrophic collisions (LEGEND 10.8).
+**Headline findings** (objects ≥10 cm in the 700–1,100 km belt, 50 years):
+
+- **The belt already grows on its own**, slowly: about 9% with nothing added.
+- **Traffic left in orbit decides whether it runs away.** 500 satellites and rocket bodies a year
+  left dead at 900 km grow the belt ×60; with 90% of satellites deorbited at end of life, the same
+  traffic grows it ×4.8. Disposal reliability is the lever.
+- **Removal holds it flat:** about 9 of the riskiest large dead objects a year with nothing added.
+- **Added elements are small by comparison.** One missile strike on a 1 t satellite adds ~360
+  objects ≥10 cm. A barrel of nails is a mission-kill weapon but does not trigger a cascade: even
+  1,000 barrels add ~25%.
+- **Checked against NASA:** rerun from NASA's own 2006 starting point, the cube engine gives 12.8
+  catastrophic collisions in 200 years, against LEGEND's 10.8.
 
 See **[SUMMARY.md](SUMMARY.md)** for a plain-language write-up, including the altitude analysis.
 
@@ -77,7 +82,7 @@ export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # or a generic Wind
 
 | Flag | What it does |
 |---|---|
-| `--alt <km> --inc <deg> --nails <n> --sigma <m/s>` | barrel deployment |
+| `--alt <km> --inc <deg> --nails <n> --sigma <m/s>` | the barrel-of-nails element: release orbit, nail count, dispersal |
 | `--gpu` | full-population time-averaged density on CUDA + CPU benchmark |
 | `--evolve` | 50-yr box-model evolution, baseline vs +barrel |
 | `--cascade` | discrete super-particle cascade |
@@ -205,5 +210,5 @@ default inputs and exits.
 
 If you use the model or its results, please cite the repository:
 
-> TimKadyrov. (2026). *DebrisCascade: a barrel-of-nails LEO debris model.* GitHub repository.
+> TimKadyrov. (2026). *DebrisCascade: debris cascade modelling of low-Earth orbit.* GitHub repository.
 > https://github.com/TimKadyrov/DebrisCascade

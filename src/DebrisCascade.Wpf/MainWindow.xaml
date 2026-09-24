@@ -100,29 +100,6 @@
                         <TextBlock Style="{StaticResource Lbl}" Text="Seeds per cube ensemble"/>
                         <TextBox x:Name="Seeds" Text="8"/>
                     </StackPanel>
-                    <TextBlock Style="{StaticResource Head}" Text="BARREL"/>
-                    <TextBlock Style="{StaticResource Lbl}" Text="Release altitude (km)"/>
-                    <TextBox x:Name="AltKm" Text="900"/>
-                    <TextBlock Style="{StaticResource Lbl}" Text="Inclination (deg)"/>
-                    <TextBox x:Name="IncDeg" Text="53"/>
-                    <TextBlock Style="{StaticResource Lbl}" Text="Nail count"/>
-                    <TextBox x:Name="NailCount" Text="200000"/>
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" Margin="0,0,4,0">
-                            <TextBlock Style="{StaticResource Lbl}" Text="Nail length (mm)"/>
-                            <TextBox x:Name="NailLen" Text="75"/>
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Margin="4,0,0,0">
-                            <TextBlock Style="{StaticResource Lbl}" Text="Nail dia (mm)"/>
-                            <TextBox x:Name="NailDia" Text="3"/>
-                        </StackPanel>
-                    </Grid>
-                    <TextBlock Style="{StaticResource Lbl}" Text="Dispersal σ (m/s per axis)"/>
-                    <TextBox x:Name="SigmaMS" Text="50"/>
-                    <TextBlock Style="{StaticResource Lbl}" Text="Relative velocity (m/s)"/>
-                    <TextBox x:Name="RelVelMS" Text="10000"/>
-
                     <TextBlock Style="{StaticResource Head}" Text="ENVIRONMENT"/>
                     <TextBlock Style="{StaticResource Lbl}" Text="Objects added a year (satellites + rocket bodies)"/>
                     <TextBox x:Name="LaunchRate" Text="0"/>
@@ -151,13 +128,37 @@
                     <TextBox x:Name="Solar" Text="1.0"/>
                     <TextBlock Style="{StaticResource Lbl}" Text="Horizon (years)"/>
                     <TextBox x:Name="Horizon" Text="50"/>
+                    <TextBlock Style="{StaticResource Head}" Text="ADDED ELEMENT · BARREL OF NAILS"/>
+                    <TextBlock Style="{StaticResource Lbl}" Text="Optional scenario element: a barrel of nails dumped in orbit" TextWrapping="Wrap"/>
+                    <TextBlock Style="{StaticResource Lbl}" Text="Release altitude (km)"/>
+                    <TextBox x:Name="AltKm" Text="900"/>
+                    <TextBlock Style="{StaticResource Lbl}" Text="Inclination (deg)"/>
+                    <TextBox x:Name="IncDeg" Text="53"/>
+                    <TextBlock Style="{StaticResource Lbl}" Text="Nail count"/>
+                    <TextBox x:Name="NailCount" Text="200000"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Margin="0,0,4,0">
+                            <TextBlock Style="{StaticResource Lbl}" Text="Nail length (mm)"/>
+                            <TextBox x:Name="NailLen" Text="75"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Margin="4,0,0,0">
+                            <TextBlock Style="{StaticResource Lbl}" Text="Nail dia (mm)"/>
+                            <TextBox x:Name="NailDia" Text="3"/>
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Style="{StaticResource Lbl}" Text="Dispersal σ (m/s per axis)"/>
+                    <TextBox x:Name="SigmaMS" Text="50"/>
+                    <TextBlock Style="{StaticResource Lbl}" Text="Relative velocity (m/s)"/>
+                    <TextBox x:Name="RelVelMS" Text="10000"/>
+
                 </StackPanel>
             </ScrollViewer>
         </Border>
 
         <!-- Content -->
         <DockPanel Grid.Column="1">
-            <TextBlock DockPanel.Dock="Top" Text="DebrisCascade · Barrel-of-Nails LEO Debris Model"
+            <TextBlock DockPanel.Dock="Top" Text="DebrisCascade · Debris cascade modelling of low-Earth orbit"
                        FontSize="18" FontWeight="SemiBold" Margin="0,2,0,10"/>
             <StackPanel x:Name="Buttons" DockPanel.Dock="Top" Margin="0,0,0,10">
                 <!-- Views that run on the engine picked on the left -->

@@ -9,8 +9,9 @@ using DebrisCascade.Core;
 using DebrisCascade.Interop;
 
 // ---------------------------------------------------------------------------
-// DebrisCascade — barrel-of-nails LEO collision-flux assessment (near-term engine).
-// Scenario: random tumbling dump. CPU reference run; CUDA propagator to follow.
+// DebrisCascade — debris cascade modelling of low-Earth orbit. The default run assesses one added element,
+// a barrel of nails released as a random tumbling dump (lethality, drag lifetime, flux); the flags run the
+// cascade scenarios.
 // ---------------------------------------------------------------------------
 
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture; // stable, unambiguous numeric output
@@ -19,7 +20,8 @@ var opts = CliOptions.Parse(args);
 string dataDir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "data");
 dataDir = Path.GetFullPath(dataDir);
 
-Console.WriteLine("=== DebrisCascade: barrel-of-nails LEO flux assessment ===\n");
+Console.WriteLine("=== DebrisCascade: debris cascade modelling of low-Earth orbit ===");
+Console.WriteLine("--- Added element: a barrel of nails (lethality, lifetime, flux); flags run the cascade scenarios ---\n");
 
 // 1. Load the catalog: every object on orbit (Space-Track), the CelesTrak group, or a local file.
 Console.WriteLine($"Loading catalog (cache dir: {dataDir}) ...");

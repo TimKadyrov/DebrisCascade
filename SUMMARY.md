@@ -1,20 +1,19 @@
 # DebrisCascade — Study Summary
 
-*Can a launched "barrel of nails" render low-Earth orbit unusable via Kessler syndrome?*
+*What drives the debris population of low-Earth orbit toward a Kessler cascade, and what holds it back?
+And how much would added elements such as a missile strike or a barrel of nails change?*
 
 Every number below comes from one scripted run (`DebrisCascade.Cli --deck` → `data/deck_numbers.json`)
 on the live Space-Track catalog. Growth figures are over 50 years. Scenario results are means of
 16 cube-engine runs (different random seeds); effects smaller than that run-to-run scatter (a
-barrel, an ASAT strike) come from the deterministic box model. A 16-run mean still moves by a few
+barrel of nails, a missile strike) come from the deterministic box model. A 16-run mean still moves by a few
 percent between ensembles (the no-launch baseline by about ±0.05), so small differences in the
 growth factors below are not significant.
 
 ## The study
 
-We set out to answer, quantitatively rather than rhetorically, whether launching a "barrel of
-nails" into low-Earth orbit could render LEO unusable through Kessler syndrome. A barrel is the
-cheapest way to put a debris weapon in orbit: no guidance, no interceptor, just mass and a
-dispenser. That makes it worth a number rather than an opinion. The modeling
+The study models how the debris population of low-Earth orbit evolves and what pushes it toward a
+Kessler cascade, the runaway in which collisions make debris faster than drag removes it. The modeling
 chain is grounded in real data. It uses every object currently on orbit from Space-Track: 29,779
 in LEO, comprising 16,916 payloads, 9,956 catalogued debris pieces, 1,573 rocket bodies and 1,334
 unidentified objects, 97% with radar cross-sections. Those cross-sections give per-object masses and
@@ -23,40 +22,18 @@ NASA Standard Breakup Model, including its own area-to-mass ratios for fragments
 independent cascade engines run the evolution: an aggregate source–sink ODE (the box model), a
 discrete super-particle Monte Carlo, and a conjunction "cube" model that propagates every object
 on the GPU and resolves collisions by real orbit-crossing geometry. The cube engine draws the
-scenario results; the box model resolves the barrel-sized effects; the discrete engine checks
-both. We added ongoing launch traffic, an economically-rational "operators retreat" feedback, and
-explosions of rocket bodies and dead satellites (~4 a year, average size) as a source of debris
-besides collisions. The headline metric is the standard one for Kessler studies: the population of
-objects **≥10 cm**, reported both for all of LEO and for the 700–1,100 km belt.
+scenario results; the box model resolves the small added elements; the discrete engine checks
+both. Scenarios add elements to the environment: launch traffic, with or without end-of-life
+disposal and collision avoidance; an economically rational "operators retreat" feedback; explosions
+of rocket bodies and dead satellites (~4 a year, average size); active debris removal; a large
+breakup such as a missile strike; and a barrel of nails, the cheapest debris weapon imaginable. The
+headline metric is the standard one for Kessler studies: the population of objects **≥10 cm**,
+reported both for all of LEO and for the 700–1,100 km belt.
 
-The verdict: **a barrel of nails is a genuine mission-kill weapon, but it neither triggers
-Kessler nor ends LEO.** A single ~4 g nail is lethal to any satellite it strikes, yet at ~0.8 J/g
-it is far below the 40 J/g needed to *shatter* a 260 kg satellite; you'd need a ~200 g bolt for
-that. The ~10⁴-fragment clouds that drive a cascade come from large-on-large collisions:
-260 kg on 260 kg makes ~29,000 fragments ≥1 cm. Nails instead flood the lethal-but-untrackable
-1–10 cm field. Dumped at 900 km, ~90–230 barrels double that field within 50 years (the range
-brackets how much debris small impacts throw off: the breakup model as written vs NASA's LEGEND
-convention). But no number of barrels doubles the ≥10 cm belt: 300 barrels put it ~21% above the
-no-barrel run after 50 years and 1,000 barrels ~25%, and the curve is flattening. One ASAT strike
-on a 1 t satellite at 865 km adds as many ≥10 cm objects as ~22 barrels.
-
-## For comparison
-
-A barrel's effect only means something next to what else moves the belt, so every source is
-put on one metric: extra objects ≥10 cm in the 700–1,100 km belt after 50 years, compared with
-adding nothing. The barrel and ASAT rows come from the box model (they are smaller than the cube
-engine's run-to-run scatter); the traffic rows from the cube engine, as everywhere else.
-
-| Source (at 900 km; ASAT at 865 km) | Extra belt objects ≥10 cm |
-|---|---|
-| 1 barrel of nails (832 kg) | ~17 |
-| 1 ASAT strike on a 1 t satellite | ~360 |
-| 1,000 barrels of nails | ~2,500 |
-| 50 satellites + rocket bodies a year, never deorbited | ~14,000 |
-| 500 satellites + rocket bodies a year, never deorbited | ~470,000 |
-
-That is why the rest of this summary is about traffic rather than the barrel: traffic is the
-scale the barrel has to be judged against, and on it the barrel is small.
+The verdict: **low-Earth orbit stays usable if what goes up comes down.** The belt already grows
+slowly on its own; traffic left in it without disposal is what could make it run away, and
+deorbiting at end of life plus a little removal keep it in check. Added one-off sources, from a
+missile strike to a barrel of nails, are small next to that.
 
 ## Altitude is the whole story
 
@@ -89,7 +66,7 @@ LEO is strongly stratified by altitude, and almost every conclusion flips with i
 
 Launch traffic into the belt, not any single object. Here a "launch" means one intact object injected
 or added at 900 km: 85% ~180 kg satellites and 15% ~2.4 t rocket bodies, none ever manoeuvred or
-deorbited. No ASAT is involved (an ASAT is a separate one-off breakup).
+deorbited. No missile strike is involved (that is a separate one-off breakup).
 It is a stress test of disposal failure, not a forecast of useful traffic. Sustained launches into
 900 km multiply the belt's ≥10 cm population ×2.8 at 50 a year, ×19 at 200 a year, and ×60 at 500
 a year (with ~280 catastrophic collisions a year by year 50, a count that includes 1–10 cm
@@ -99,8 +76,7 @@ a year). Rational operators don't save it. At 500 launches a year they throttle 
 rises: the median run stops launching by year ~26 (runs range from year 15 to 35), and launches
 taper to almost nothing by year ~46. Yet the belt still grows ×2.8 from year 26 on.
 The decision that governs LEO's long-term survival is how much mass is placed into the high,
-un-cleaned bands and how little of it is removed. Against that, a barrel of nails is a rounding
-error.
+un-cleaned bands and how little of it is removed.
 
 ## What if satellites work and deorbit
 
@@ -134,6 +110,39 @@ safe (vented, batteries discharged) so they can't explode, the belt stays flat w
 Launches raise the bill: with 50 satellites and rocket bodies a year injected into the belt (never
 deorbited) it takes about 57 removals a year.
 The belt is not doomed; it is a maintenance problem whose size is set by launch policy.
+
+## Added elements: a missile strike and a barrel of nails
+
+One-off sources can be added to the same environment and measured on the same scale. The one
+studied in most detail is a barrel of nails: 200,000 steel nails (832 kg) released as a random
+dump, the cheapest way to put a debris weapon in orbit, with no guidance, no interceptor, just mass
+and a dispenser.
+
+**A barrel of nails is a genuine mission-kill weapon, but it neither triggers
+Kessler nor ends LEO.** A single ~4 g nail is lethal to any satellite it strikes, yet at ~0.8 J/g
+it is far below the 40 J/g needed to *shatter* a 260 kg satellite; you'd need a ~200 g bolt for
+that. The ~10⁴-fragment clouds that drive a cascade come from large-on-large collisions:
+260 kg on 260 kg makes ~29,000 fragments ≥1 cm. Nails instead flood the lethal-but-untrackable
+1–10 cm field. Dumped at 900 km, ~90–230 barrels double that field within 50 years (the range
+brackets how much debris small impacts throw off: the breakup model as written vs NASA's LEGEND
+convention). But no number of barrels doubles the ≥10 cm belt: 300 barrels put it ~21% above the
+no-barrel run after 50 years and 1,000 barrels ~25%, and the curve is flattening. One missile strike (an ASAT test)
+on a 1 t satellite at 865 km adds as many ≥10 cm objects as ~22 barrels.
+
+A barrel's effect only means something next to what else moves the belt, so every source is
+put on one metric: extra objects ≥10 cm in the 700–1,100 km belt after 50 years, compared with
+adding nothing. The barrel and missile-strike rows come from the box model (they are smaller than the cube
+engine's run-to-run scatter); the traffic rows from the cube engine, as everywhere else.
+
+| Source (at 900 km; missile strike at 865 km) | Extra belt objects ≥10 cm |
+|---|---|
+| 1 barrel of nails (832 kg) | ~17 |
+| 1 missile strike on a 1 t satellite | ~360 |
+| 1,000 barrels of nails | ~2,500 |
+| 50 satellites + rocket bodies a year, never deorbited | ~14,000 |
+| 500 satellites + rocket bodies a year, never deorbited | ~470,000 |
+
+Traffic is the scale these one-off sources have to be judged against, and on it they are small.
 
 ## What the model can and can't say
 
