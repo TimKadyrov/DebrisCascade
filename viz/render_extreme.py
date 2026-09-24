@@ -31,7 +31,7 @@ def earth(ax):
     ax.plot_surface(ex, ez, ey, color="#0e2d4e", alpha=0.97, linewidth=0, shade=True, zorder=0)
     ax.plot_wireframe(ex, ez, ey, color="#2a4a6b", linewidth=0.3, alpha=0.3, rstride=6, cstride=6)
 
-# Growth factor from the model export (CLI --deck): belt objects >=10 cm after 50 yr at 500 launches/yr.
+# Growth factor from the model export (CLI --deck): belt objects >=10 cm after 50 yr with 500 objects/yr left in it.
 import json
 _r = json.load(open(os.path.join(HERE, "..", "data", "deck_numbers.json"), encoding="utf-8"))["conventions"]["asWritten"]["responsive500"]
 _g = _r["constantBelt"][-1] / _r["constantBelt"][0]
@@ -39,7 +39,7 @@ frames = [
     dict(name="extreme1", N=4000, seed=1, color="#7fa8d0", s=3.0, alpha=0.55, cmap=None,
          label="Today", sub=f"~{_r['constantBelt'][0]/1e3:.0f}k objects ≥10 cm in the belt"),
     dict(name="extreme2", N=60000, seed=2, color=None, s=1.3, alpha=0.35, cmap="autumn",
-         label="After 50 yr of 500 launches/yr", sub=f"~{_g:.0f}× objects ≥10 cm: the belt is a shell"),
+         label="After 50 yr of 500 derelicts/yr", sub=f"~{_g:.0f}× objects ≥10 cm: the belt is a shell"),
 ]
 
 for k, fr in enumerate(frames, 1):

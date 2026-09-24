@@ -198,6 +198,24 @@ public static class DeckExport
             beltGrowthNoLaunchesNoExplosions = BeltGrowth(0, 0, 0),
         };
 
+        // --- cross-checks of two headline points with the per-object engines (8 seeds each) ---
+        log("  cross-checks: 50 launches/yr; 10 removals/yr (discrete + cube, 8 seeds) ...");
+        object CrossCheck(double launches, double removals)
+        {
+            var dis = new List<double>(); var con = new List<double>();
+            for (int s = 1; s <= 8; s++)
+            {
+                var d = new DiscreteCascade(seed: s) { LaunchRatePerYear = launches, LaunchAltKm = BeltAltKm, RemovalsPerYear = removals };
+                d.SeedFromCatalog(cat); var dr = d.Run(Horizon, 15);
+                dis.Add(dr.BeltTrackableObjects[^1] / dr.BeltTrackableObjects[0]);
+                var c = new ConjunctionCascade(seed: s) { LaunchRatePerYear = launches, LaunchAltKm = BeltAltKm, RemovalsPerYear = removals };
+                c.SeedFromCatalog(cat); var cr = c.Run(Horizon, 60);
+                con.Add(cr.BeltTrackableObjects[^1] / cr.BeltTrackableObjects[0]);
+            }
+            return new { launchesPerYear = launches, removalsPerYear = removals, box = BeltGrowth(launches, removals), discrete = dis, conjunction = con };
+        }
+        var crossChecks = new[] { CrossCheck(50, 0), CrossCheck(0, 10) };
+
         // --- per-satellite hazard by altitude (0 launches), and drag persistence ---
         log("  hazard by altitude & persistence ...");
         var hz = Box(0);
@@ -247,7 +265,7 @@ public static class DeckExport
         {
             generatedUtc = DateTime.UtcNow, horizonYears = Horizon, beltAltKm = BeltAltKm, nailsPerBarrel,
             explosionsPerYear = new KesslerEvolution(nail).ExplosionsPerYear, explosionScale = new KesslerEvolution(nail).ExplosionScale, explosionSensitivity = explosions,
-            removal,
+            removal, crossChecks,
             catalog, physics, conventions = perConv, usability, lowEvent,
             ensembles = new { discreteAll = dis, conjunctionAll = con, discreteTrackable = disT, conjunctionTrackable = conT, discreteBelt = disB, conjunctionBelt = conB },
         };

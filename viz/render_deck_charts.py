@@ -79,17 +79,17 @@ ax.plot(rates, gB, color=RED, lw=2.6, marker="o", ms=4)
 ax.axhline(1, color=MUTE, lw=1, ls=(0, (4, 3)))
 ax.set_yscale("log"); ax.set_xlim(0, 1000); ax.set_ylim(0.8, 700)
 ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"×{v:g}"))
-ax.set_xlabel("launches per year into the 900 km belt (sustained for 50 years)", fontsize=10)
+ax.set_xlabel("objects left per year at 900 km for 50 years  (85% satellites, 15% rocket bodies; none manoeuvred or deorbited)", fontsize=10)
 ax.set_ylabel("belt objects ≥10 cm after 50 yr", fontsize=9.5)
 ax.tick_params(labelsize=9)
 def gx(g): return f"{g:.1f}" if g < 10 else f"{g:.0f}"
 for r, dx, dy in [(0, 90, 1.06), (50, 45, 0.8), (200, 25, 0.75), (500, 25, 0.75), (1000, -20, 1.25)]:
     g = gB[list(rates).index(r)]
-    label = f"{r}/yr → ×{gx(g)}" if r else f"no launches → ×{g:.2f}"
+    label = f"{r}/yr → ×{gx(g)}" if r else f"nothing added → ×{g:.2f}"
     ax.annotate(label, (r, g), xytext=(r + dx, g * dy), fontsize=9.5, color=RED, weight="bold",
                 ha="right" if dx < 0 else "left", arrowprops=dict(arrowstyle="-", color=RED, lw=0.7))
 ax.text(990, 1.06, "×1 = no growth", color=MUTE, fontsize=8.5, ha="right", va="bottom")
-tag(f, "box model · 50 years · launches at 900 km")
+tag(f, "box model · 50 years · derelicts added at 900 km")
 save(f, "deck_tipping.png")
 
 # --- Slide 15: constant vs responsive launch at 500/yr -----------------------------------
@@ -97,7 +97,7 @@ r5 = CW["responsive500"]; yrs = np.array(r5["years"])
 f, ax = fig(11.0, 3.75, [0.08, 0.15, 0.88, 0.78])
 q = r5["operatorsQuitYear"]
 ax.axvspan(q, 50, color=MUTE, alpha=0.08, lw=0)
-ax.plot(yrs, r5["constantBelt"], color=RED, lw=2.4, label="constant 500 launches/yr")
+ax.plot(yrs, r5["constantBelt"], color=RED, lw=2.4, label="500 objects/yr added, none deorbited")
 ax.plot(yrs, r5["responsiveBelt"], color=BLUE, lw=2.4, label="responsive: operators throttle, then quit")
 ax.axvline(q, color=MUTE, lw=1, ls=(0, (4, 3)))
 ax.set_yscale("log"); ax.set_xlim(0, 50)
@@ -107,10 +107,10 @@ ax.text(q + 0.6, ax.get_ylim()[0] * 1.15, f"operators stop launching (yr {q:.0f}
 ax.text(49.5, r5["constantBelt"][-1] * 0.8, f"×{r5['constantBelt'][-1] / r5['constantBelt'][0]:.0f}", color=RED, fontsize=11, weight="bold", ha="right", va="top")
 ax.text(49.5, r5["responsiveBelt"][-1] * 0.62, f"still ×{r5['growthAfterQuitBelt']:.1f} after they quit", color=BLUE, fontsize=10, weight="bold", ha="right", va="top")
 ax.legend(loc="upper left", fontsize=9, frameon=False)
-tag(f, "box model · 500 launches/yr at 900 km")
+tag(f, "box model · 500 objects/yr at 900 km")
 save(f, "deck_responsive.png")
 
-# --- Slide 17: the extreme case — belt under 500 launches/yr ------------------------------
+# --- Extreme case: belt under 500 objects/yr added ------------------------------
 f, ax = fig(5.78, 2.5, [0.14, 0.2, 0.83, 0.72])
 cb = np.array(r5["constantBelt"])
 ax.fill_between(yrs, cb, color=RED, alpha=0.15, lw=0); ax.plot(yrs, cb, color=RED, lw=2.2)
@@ -119,7 +119,7 @@ ax.yaxis.set_major_formatter(FuncFormatter(kfmt)); ax.tick_params(labelsize=8)
 ax.set_xlabel("years", fontsize=8.5); ax.set_ylabel("belt objects ≥10 cm", fontsize=8)
 ax.text(1, cb[0] * 1.9, f"{kfmt(cb[0])} today", fontsize=8, color=INK, va="bottom")
 ax.text(49, cb[-1] * 0.7, kfmt(cb[-1]), fontsize=9, color=RED, weight="bold", ha="right", va="top")
-tag(f, "box model · 500 launches/yr at 900 km")
+tag(f, "box model · 500 objects/yr at 900 km, none deorbited")
 save(f, "deck_extreme.png")
 
 # --- Slide 19: extra risk from a big low-altitude breakup ---------------------------------
@@ -138,14 +138,14 @@ save(f, "deck_lowevent.png")
 R = D["removal"]; rr = np.array(R["removalsPerYear"])
 f, ax = fig(11.56, 3.89, [0.075, 0.16, 0.90, 0.78])
 ax.axhline(1, color=MUTE, lw=1, ls=(0, (4, 3)))
-ax.plot(rr, R["beltGrowthAt50Launches"], color=RED, lw=2.6, marker="o", ms=4, label="50 launches/yr into the belt")
-ax.plot(rr, R["beltGrowthNoLaunches"], color=GREEN, lw=2.6, marker="o", ms=4, label="no launches")
+ax.plot(rr, R["beltGrowthAt50Launches"], color=RED, lw=2.6, marker="o", ms=4, label="50 derelicts/yr added to the belt")
+ax.plot(rr, R["beltGrowthNoLaunches"], color=GREEN, lw=2.6, marker="o", ms=4, label="nothing added")
 ax.set_xlim(0, 100); ax.set_ylim(0, max(R["beltGrowthAt50Launches"]) * 1.12)
 ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"×{v:g}"))
 ax.set_xlabel("large derelicts removed per year (riskiest first)", fontsize=10)
 ax.set_ylabel("belt objects ≥10 cm after 50 yr", fontsize=9.5); ax.tick_params(labelsize=9)
 for x, y, c, lab, dy in [(R["toHoldFlatNoLaunches"], 1, GREEN, f"~{R['toHoldFlatNoLaunches']:.0f}/yr holds it flat", -0.4),
-                         (R["toHoldFlatAt50Launches"], 1, RED, f"~{R['toHoldFlatAt50Launches']:.0f}/yr with 50 launches/yr", 0.95)]:
+                         (R["toHoldFlatAt50Launches"], 1, RED, f"~{R['toHoldFlatAt50Launches']:.0f}/yr with 50 derelicts/yr added", 0.95)]:
     ax.plot([x], [y], "o", ms=9, mfc="white", mec=c, mew=2, zorder=5)
     ax.annotate(lab, (x, y), xytext=(x + 3, y + dy), fontsize=9.5, color=c, weight="bold",
                 arrowprops=dict(arrowstyle="-", color=c, lw=0.7))

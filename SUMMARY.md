@@ -60,9 +60,14 @@ LEO is strongly stratified by altitude, and almost every conclusion flips with i
 
 ## What actually tips LEO
 
-Launch traffic into the belt, not any single object. Sustained launches into 900 km multiply the
-belt's ≥10 cm population ×2.8 at 50 a year, ×16 at 200 a year, and ×87 at 500 a year (with
-~1,500–1,700 catastrophic collisions a year by year 50). Rational operators don't save it. At 500
+Launch traffic into the belt, not any single object. Here a "launch" means one intact object left
+at 900 km: 85% ~180 kg satellites and 15% ~2.4 t rocket bodies, none ever manoeuvred or deorbited,
+so each is a derelict from day one. No ASAT is involved (an ASAT is a separate one-off breakup).
+It is a stress test of disposal failure, not a forecast of useful traffic. Sustained launches into
+900 km multiply the belt's ≥10 cm population ×2.8 at 50 a year, ×16 at 200 a year, and ×87 at 500
+a year (with ~1,500–1,700 catastrophic collisions a year by year 50). The stochastic engines agree
+on the direction but run somewhat milder: at 50 a year, discrete ×2.0 and cube ×2.2 (8-seed means;
+seeds span ×1.6–2.7). Rational operators don't save it. At 500
 launches a year they throttle back as the risk rises and stop entirely by year ~28, yet the belt
 still doubles afterwards. The decision that governs LEO's long-term survival is how much mass is
 placed into the high, un-cleaned bands and how little of it is removed. Against that, a barrel
@@ -74,7 +79,9 @@ Removal and passivation. Taking the riskiest large derelicts out of orbit each y
 in the densest shells: NASA LEGEND's selection criterion) bends the belt. About 10 removals a year
 hold its ≥10 cm population flat over 50 years with no new launches, and about 6 if old stages are
 also made safe (vented, batteries discharged) so they can't explode, close to LEGEND's published
-~5 a year. Launches raise the bill: at 50 a year into the belt it takes about 49 removals a year.
+~5 a year. The stochastic engines confirm it: 10 removals a year gives discrete ×1.07 and cube
+×1.02 (8-seed means). Launches raise the bill: with 50 derelicts a year added to the belt it takes
+about 49 removals a year.
 The belt is not doomed; it is a maintenance problem whose size is set by launch policy.
 
 ## What the model can and can't say
@@ -84,7 +91,8 @@ The belt is not doomed; it is a maintenance problem whose size is set by launch 
   fragments' cratering impacts throw off new debris changes the 1–10 cm results 2–3×, but barely
   moves the ≥10 cm belt. Both are reported.
 - **Not modelled.** Degradation debris (paint flakes, insulation), station-keeping and collision
-  avoidance (beyond constellation formation-keeping), the solar cycle. The modelled 1–10 cm field still thins over
+  avoidance (beyond constellation formation-keeping), end-of-life disposal of launched objects
+(each stays a derelict), the solar cycle. The modelled 1–10 cm field still thins over
   the horizon, which is why the ≥10 cm population, not the raw total, is the headline metric.
 - **The engines agree.** Calibrated on the real catalog's orbit geometry (10,000 snapshots), the
   cube method's collision rate matches the box model's within ~5%, both overall (1.01×) and for
