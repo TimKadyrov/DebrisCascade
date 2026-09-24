@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DebrisCascade.Cli/DebrisCascade.Cli.csproj" />
+    <Project Path="src/DebrisCascade.Core/DebrisCascade.Core.csproj" />
+    <Project Path="src/DebrisCascade.Interop/DebrisCascade.Interop.csproj" />
+    <Project Path="src/DebrisCascade.Wpf/DebrisCascade.Wpf.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DebrisCascade.Tests/DebrisCascade.Tests.csproj" />
+  </Folder>
+</Solution>

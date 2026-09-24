@@ -3,10 +3,10 @@ bin/
 obj/
 *.user
 
-# CUDA / native build artifacts (rebuild with src/SpaceWars.Native/build.bat)
+# CUDA / native build artifacts (rebuild with src/DebrisCascade.Native/build.bat)
 *.exp
 *.lib
-src/SpaceWars.Native/spacewars_cuda.dll
+src/DebrisCascade.Native/debriscascade_cuda.dll
 
 # CelesTrak catalog caches (re-downloaded on demand)
 data/*.tle

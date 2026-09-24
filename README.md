@@ -1,4 +1,4 @@
-# SpaceWars — Barrel-of-Nails LEO Debris Model
+# DebrisCascade — Barrel-of-Nails LEO Debris Model
 
 An academic risk assessment: *can a launched "barrel of nails" render low-Earth orbit
 unusable via Kessler syndrome?* The tool pulls the real satellite catalog, propagates it
@@ -31,24 +31,24 @@ CelesTrak TLEs → CUDA J2 propagation → collision flux (spatial density)
 
 | Project | Role |
 |---|---|
-| `SpaceWars.Core` | Physics: orbital elements + J2 propagator, TLE parser, lethality (EMR/40 J/g), NASA breakup model, exponential-atmosphere drag, spatial-density flux, box-model Kessler evolution, discrete cascade, debris altitude profile |
-| `SpaceWars.Native` | CUDA C++ engine (`spacewars_cuda.cu`) — batch J2 propagation + time-averaged density; built to `spacewars_cuda.dll` |
-| `SpaceWars.Interop` | P/Invoke bindings (`Cuda`) + the tier-3 conjunction cascade |
-| `SpaceWars.Cli` | Assessment CLI and scenario runners |
-| `SpaceWars.Wpf` | Interactive analysis tool: the deck's analyses on your own inputs (see below) |
-| `SpaceWars.Tests` | 58 physics/GPU validation tests |
+| `DebrisCascade.Core` | Physics: orbital elements + J2 propagator, TLE parser, lethality (EMR/40 J/g), NASA breakup model, exponential-atmosphere drag, spatial-density flux, box-model Kessler evolution, discrete cascade, debris altitude profile |
+| `DebrisCascade.Native` | CUDA C++ engine (`debriscascade_cuda.cu`) — batch J2 propagation + time-averaged density; built to `debriscascade_cuda.dll` |
+| `DebrisCascade.Interop` | P/Invoke bindings (`Cuda`) + the tier-3 conjunction cascade |
+| `DebrisCascade.Cli` | Assessment CLI and scenario runners |
+| `DebrisCascade.Wpf` | Interactive analysis tool: the deck's analyses on your own inputs (see below) |
+| `DebrisCascade.Tests` | 58 physics/GPU validation tests |
 
 ## Build & run
 
 ```bash
 # Build the CUDA engine (needs the CUDA toolkit + MSVC; RTX-class GPU)
-src/SpaceWars.Native/build.bat
+src/DebrisCascade.Native/build.bat
 
 # Build & test the .NET solution
 dotnet test
 
 # Run the assessment against the live catalog
-dotnet run --project src/SpaceWars.Cli
+dotnet run --project src/DebrisCascade.Cli
 
 # Optional: fuller per-object RCS via Space-Track (falls back to CelesTrak if unset)
 export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # or a generic Windows credential named SPACETRACK
@@ -76,34 +76,37 @@ export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # or a generic Wind
 
 ### WPF tool
 
-`dotnet run --project src/SpaceWars.Wpf`. Each button runs one of the deck's analyses on the inputs in
+`dotnet run --project src/DebrisCascade.Wpf`. Each button runs one of the deck's analyses on the inputs in
 the left panel and draws it the way the deck does: the metric is debris ≥10 cm in the 700–1,100 km
 belt, and growth is "×" over today's belt objects.
 
-**Engine.** With *Cube* selected (the default), Tipping, Operators quit, Working satellites and Removal
-run the cube engine on the GPU as a seed ensemble (*Seeds*, default 8): the mean is drawn, the seed range
-shaded (or as whiskers on bars), and the box model dashed as a cross-check. A cube run takes about 10 s,
-and a seed ensemble runs in parallel; progress shows on the chart. *Box model* runs those views
-deterministically in seconds. Scale check, Comparison and Usability always use the box model, which
-resolves effects smaller than the cube's seed-to-seed scatter (one barrel adds under 1% to the belt).
+**Engine.** The engine picked on the left (*Cube*, the default, or *Box model*) drives the top row of
+cards: Evolution, Tipping sweep, Operators quit, Working satellites and Removal. On the cube engine
+each is a GPU seed ensemble (*Seeds*, default 8): the mean is drawn, the seed range shaded (or as
+whiskers on bars), and the box model dashed as a cross-check. A cube run takes about 10 s and an
+ensemble runs in parallel; progress shows on the chart. The second row is tied to one engine by what
+it needs, and each card says which: Globe needs every object's position (cube); Usability, Scale
+check, Comparison and NASA comparison use the box model, which resolves effects smaller than the
+cube's seed-to-seed scatter (one barrel adds under 1% to the belt).
 
-| View | What it shows |
-|---|---|
-| Lethality & Flux | single-nail lethality, drag lifetime and flux (text) |
-| Evolve (box) / Cascade (discrete) / Conjunction (cube) | belt debris over time, with and without the barrel; the working fleet when ticked (one run each) |
-| Globe (cube) | every object of one cube run around the Earth every 5 years: intact objects, debris ≥10 cm coloured by altitude, nails, working satellites, and 1–10 cm debris on request; drag to turn, slide through the years |
-| Usability by altitude | collision risk per satellite by altitude (today and with the barrel, year slider), the belt, the walk-away line, and how long a fragment stays (right axis) |
-| Scale check (barrels) | belt and all-object change vs number of barrels at the release altitude, with one ASAT strike for scale |
-| Comparison | barrel, ASAT and traffic on one measure: extra belt objects after the horizon |
-| Tipping sweep | belt growth vs objects added a year; a second curve for working satellites when ticked |
-| Operators quit | launching throughout vs operators throttling back and quitting |
-| Working satellites | never deorbited / poor / today's practice / best / your settings, at 50 and 500 a year |
-| Removal | belt growth vs large dead objects removed a year, with nothing added and with traffic |
-| NASA comparison | catastrophic collisions a year with nothing added (≥10 cm only and incl. 1–10 cm) against LEGEND and the IADC study, plus growth and removals to stabilise, with sources |
+| View | Engine | What it shows |
+|---|---|---|
+| Evolution | selected | belt debris over time, with and without the barrel; the working fleet when ticked |
+| Tipping sweep | selected | belt growth vs objects added a year; a second curve for working satellites when ticked |
+| Operators quit | selected | launching throughout vs operators throttling back and quitting |
+| Working satellites | selected | never deorbited / poor / today's practice / best / your settings, at 50 and 500 a year |
+| Removal | selected | belt growth vs large dead objects removed a year, with nothing added and with traffic |
+| Globe | cube | every object of one cube run around the Earth every 5 years: intact objects, debris ≥10 cm coloured by altitude, nails, working satellites, and 1–10 cm debris on request; drag to turn, slide through the years |
+| Usability by altitude | box | collision risk per satellite by altitude (today and with the barrel, year slider), the belt, the walk-away line, and how long a fragment stays (right axis) |
+| Scale check (barrels) | box | belt and all-object change vs number of barrels at the release altitude, with one ASAT strike for scale |
+| Comparison | box | barrel, ASAT and traffic on one measure: extra belt objects after the horizon |
+| NASA comparison | box | catastrophic collisions a year with nothing added (≥10 cm only and incl. 1–10 cm) against LEGEND and the IADC study, plus growth and removals to stabilise, with sources |
+| Engines side by side | all three | box, discrete and cube ensembles on the same inputs, no barrel |
+| Lethality & Flux | — | single-nail lethality, drag lifetime and flux (text) |
 
 "Working satellites (deorbit + dodge)" switches the box and cube engines to working satellites with the
 disposal, rocket-body, avoidance and lifetime fields below it. **Save PNG** writes the current chart and
-its text; `SpaceWars.Wpf.exe --render <folder> [view ...]` renders every view (or the named ones) on the
+its text; `DebrisCascade.Wpf.exe --render <folder> [view ...]` renders every view (or the named ones) on the
 default inputs and exits.
 
 ## Visualizations

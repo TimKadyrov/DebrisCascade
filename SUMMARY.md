@@ -1,8 +1,8 @@
-# SpaceWars — Study Summary
+# DebrisCascade — Study Summary
 
 *Can a launched "barrel of nails" render low-Earth orbit unusable via Kessler syndrome?*
 
-Every number below comes from one scripted run (`SpaceWars.Cli --deck` → `data/deck_numbers.json`)
+Every number below comes from one scripted run (`DebrisCascade.Cli --deck` → `data/deck_numbers.json`)
 on the live Space-Track catalog. Growth figures are over 50 years. Scenario results are means of
 16 cube-engine runs (different random seeds); effects smaller than that run-to-run scatter (a
 barrel, an ASAT strike) come from the deterministic box model.
@@ -164,5 +164,5 @@ The belt is not doomed; it is a maintenance problem whose size is set by launch 
 
 ---
 
-*Generated from the SpaceWars model chain. See [README.md](README.md) for the code and how to
-reproduce these results (`dotnet run --project src/SpaceWars.Cli -- --deck`).*
+*Generated from the DebrisCascade model chain. See [README.md](README.md) for the code and how to
+reproduce these results (`dotnet run --project src/DebrisCascade.Cli -- --deck`).*

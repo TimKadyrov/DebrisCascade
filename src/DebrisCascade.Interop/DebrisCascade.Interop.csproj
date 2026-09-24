@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\DebrisCascade.Core\DebrisCascade.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Ship the CUDA engine next to any consumer's executable. Content items flow to
+       the output of projects that reference this one. Built by src/DebrisCascade.Native/build.bat. -->
+  <ItemGroup Condition="Exists('..\DebrisCascade.Native\debriscascade_cuda.dll')">
+    <Content Include="..\DebrisCascade.Native\debriscascade_cuda.dll">
+      <Link>debriscascade_cuda.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
