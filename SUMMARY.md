@@ -84,7 +84,8 @@ or added at 900 km: 85% ~180 kg satellites and 15% ~2.4 t rocket bodies, none ev
 deorbited. No ASAT is involved (an ASAT is a separate one-off breakup).
 It is a stress test of disposal failure, not a forecast of useful traffic. Sustained launches into
 900 km multiply the belt's ≥10 cm population ×2.8 at 50 a year, ×16 at 200 a year, and ×87 at 500
-a year (with ~1,500–1,700 catastrophic collisions a year by year 50). The stochastic engines agree
+a year (with ~1,500–1,700 catastrophic collisions a year by year 50, a count that includes 1–10 cm
+fragments shattering small objects). The stochastic engines agree
 on the direction but run somewhat milder: at 50 a year, discrete ×2.0 and cube ×2.2 (8-seed means;
 seeds span ×1.6–2.7). Rational operators don't save it. At 500
 launches a year they throttle back as the risk rises and stop entirely by year ~28, yet the belt
@@ -113,6 +114,17 @@ The belt is not doomed; it is a maintenance problem whose size is set by launch 
   avoidance (beyond constellation formation-keeping), end-of-life disposal of the injected
   satellites and rocket bodies, the solar cycle. The modelled 1–10 cm field still thins over
   the horizon, which is why the ≥10 cm population, not the raw total, is the headline metric.
+- **Checked against NASA.** The model agrees in direction with NASA's LEGEND model. With no new
+  launches, LEO keeps growing (Liou & Johnson 2006, *Science*: roughly flat for 50 years, then
+  up; here the belt grows from the start, ×1.15 even without explosions). Removing ~5 large
+  objects a year stabilises LEO (Liou, Johnson & Hill 2010; Liou 2011: with 90% end-of-life
+  disposal, over 200 years; here ~6–10 hold the belt flat). Counting ≥10 cm objects only, our
+  no-launch catastrophic-collision rate is 0.6 a year in the first decade and 0.34 a year by years
+  40–50, i.e. ~2–5× the one every 5–9 years in the six-agency IADC comparison study (2013). That
+  fits a larger population today and no collision avoidance in the model. With 1–10 cm
+  impactors counted too, the rate roughly doubles; the ≥10 cm belt figures don't change. A
+  direct benchmark (rerunning a published LEGEND scenario from its own initial population) has
+  not been done.
 - **The engines agree.** Calibrated on the real catalog's orbit geometry (10,000 snapshots), the
   cube method's collision rate matches the box model's within ~5%, both overall (1.01×) and for
   catastrophic collisions (0.96×). Real geometry shifts some encounters from head-on to shallow
