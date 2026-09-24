@@ -20,6 +20,8 @@ public sealed class CascadeResult
     public double[] WorkingSatellites = [];
     /// <summary>Objects ≥10 cm weighted by time between 200 and 2,000 km (cube engine; NASA's effective number).</summary>
     public double[] LeoEffectiveTrackable = [];
+    /// <summary>Fraction of nominal launches flown each year (responsive launch; cube engine).</summary>
+    public double[] LaunchFraction = [];
 }
 
 /// <summary>

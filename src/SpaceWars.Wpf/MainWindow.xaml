@@ -32,12 +32,49 @@
             <Setter Property="Foreground" Value="{StaticResource Ink}"/>
             <Setter Property="Margin" Value="0,8,0,0"/>
         </Style>
+        <Style TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+            <Setter Property="Margin" Value="0,6,0,0"/>
+        </Style>
         <Style TargetType="Button">
             <Setter Property="Background" Value="#1E2C42"/>
             <Setter Property="Foreground" Value="{StaticResource Ink}"/>
             <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
             <Setter Property="Padding" Value="10,6"/><Setter Property="Margin" Value="0,0,6,0"/>
             <Setter Property="FontFamily" Value="Consolas"/><Setter Property="Cursor" Value="Hand"/>
+            <!-- Own template: the default one swaps in a light background on hover and when disabled,
+                 which leaves light label text unreadable. -->
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" CornerRadius="5" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#2A4163"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#4DA6FF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#15314A"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- Two-line button labels: the view, then (dimmer) the engine it always uses and why -->
+        <Style x:Key="BtnTitle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Consolas"/><Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+        </Style>
+        <Style x:Key="BtnSub" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI"/><Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="#B4C6DD"/><Setter Property="Margin" Value="0,1,0,0"/>
         </Style>
     </Window.Resources>
 
@@ -54,6 +91,15 @@
                 <StackPanel>
                     <TextBlock Text="INPUTS" FontFamily="Consolas" FontSize="12" Foreground="{StaticResource Cyan}"
                                Margin="0,10,0,2" FontWeight="Bold"/>
+                    <TextBlock Style="{StaticResource Head}" Text="ENGINE"/>
+                    <RadioButton x:Name="EngineCube" GroupName="Engine" IsChecked="True" Content="Cube (GPU, every object on its orbit)"
+                                 ToolTip="Tipping, Operators quit, Working satellites and Removal run the cube engine as a seed ensemble: mean, with the seed range shaded. The box model is drawn dashed as a cross-check."/>
+                    <RadioButton x:Name="EngineBox" GroupName="Engine" Content="Box model (deterministic, fast)"
+                                 ToolTip="Scenario views run the box model only. Scale check, Comparison and Usability always use the box model: it resolves effects smaller than the cube's seed scatter."/>
+                    <StackPanel IsEnabled="{Binding IsChecked, ElementName=EngineCube}">
+                        <TextBlock Style="{StaticResource Lbl}" Text="Seeds per cube ensemble"/>
+                        <TextBox x:Name="Seeds" Text="8"/>
+                    </StackPanel>
                     <TextBlock Style="{StaticResource Head}" Text="BARREL"/>
                     <TextBlock Style="{StaticResource Lbl}" Text="Release altitude (km)"/>
                     <TextBox x:Name="AltKm" Text="900"/>
@@ -113,32 +159,66 @@
         <DockPanel Grid.Column="1">
             <TextBlock DockPanel.Dock="Top" Text="SpaceWars · Barrel-of-Nails LEO Debris Model"
                        FontSize="18" FontWeight="SemiBold" Margin="0,2,0,10"/>
-            <WrapPanel x:Name="Buttons" DockPanel.Dock="Top" Margin="0,0,0,10">
-                <Button x:Name="BtnFlux" Content="Lethality &amp; Flux" Click="RunFlux" Margin="0,0,6,6"
-                        ToolTip="Single-nail lethality, drag lifetime and flux (text)"/>
-                <Button x:Name="BtnEvolve" Content="Evolve (box)" Click="RunEvolve" Margin="0,0,6,6"
-                        ToolTip="Belt debris ≥10 cm over time, with and without the barrel (box model)"/>
-                <Button x:Name="BtnCascade" Content="Cascade (discrete)" Click="RunCascade" Margin="0,0,6,6"/>
-                <Button x:Name="BtnConj" Content="Conjunction (cube)" Click="RunConjunction" Margin="0,0,6,6"/>
-                <Button x:Name="BtnUse" Content="Usability by altitude" Click="RunUsability" Margin="0,0,6,6"
-                        ToolTip="Collision risk per satellite by altitude, and how long debris stays"/>
-                <Button x:Name="BtnBarrels" Content="Scale check (barrels)" Click="RunBarrels" Margin="0,0,6,6"
-                        ToolTip="How many barrels to move the belt — vs one ASAT strike"/>
-                <Button x:Name="BtnCompare" Content="Comparison" Click="RunComparison" Margin="0,0,6,6"
-                        ToolTip="Barrel vs ASAT vs traffic on one measure"/>
-                <Button x:Name="BtnTip" Content="Tipping sweep" Click="RunTipping" Margin="0,0,6,6"
-                        ToolTip="Belt growth vs objects added a year at the launch altitude"/>
-                <Button x:Name="BtnOps" Content="Operators quit" Click="RunOperators" Margin="0,0,6,6"
-                        ToolTip="Launching throughout vs operators throttling back and quitting"/>
-                <Button x:Name="BtnWorking" Content="Working satellites" Click="RunWorking" Margin="0,0,6,6"
-                        ToolTip="Disposal and avoidance settings: never deorbited, poor, today's practice, best, yours"/>
-                <Button x:Name="BtnRemoval" Content="Removal" Click="RunRemoval" Margin="0,0,6,6"
-                        ToolTip="Belt growth vs large dead objects removed a year"/>
-                <Button x:Name="BtnNasa" Content="NASA comparison" Click="RunNasa" Margin="0,0,6,6"
-                        ToolTip="The model against NASA's LEGEND and the IADC study: collision rates, growth without launches, removals to stabilise"/>
-                <Button x:Name="BtnSave" Content="Save PNG" Click="SavePng" Margin="12,0,6,6" Background="#15314A"
-                        ToolTip="Save the current chart (and its text) as a PNG"/>
-            </WrapPanel>
+            <StackPanel x:Name="Buttons" DockPanel.Dock="Top" Margin="0,0,0,10">
+                <!-- Views that run on the engine picked on the left -->
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Left" Width="118" Margin="0,4,6,0">
+                        <TextBlock Text="SELECTED ENGINE" FontFamily="Consolas" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource Cyan}"/>
+                        <TextBlock x:Name="EngineCaption" Text="cube, 8 seeds" FontSize="10.5" Foreground="{StaticResource Dim}"/>
+                    </StackPanel>
+                    <WrapPanel>
+                        <Button x:Name="BtnEvolve" Click="RunEvolve" Margin="0,0,6,6"
+                                ToolTip="Belt debris ≥10 cm over time, with and without the barrel"><StackPanel><TextBlock Style="{StaticResource BtnTitle}" Text="Evolution"/><TextBlock Style="{StaticResource BtnSub}" Text="belt over time"/></StackPanel></Button>
+                        <Button x:Name="BtnTip" Click="RunTipping" Margin="0,0,6,6"
+                                ToolTip="Belt growth vs objects added a year at the launch altitude"><StackPanel><TextBlock Style="{StaticResource BtnTitle}" Text="Tipping sweep"/><TextBlock Style="{StaticResource BtnSub}" Text="growth vs traffic"/></StackPanel></Button>
+                        <Button x:Name="BtnOps" Click="RunOperators" Margin="0,0,6,6"
+                                ToolTip="Launching throughout vs operators throttling back and quitting"><StackPanel><TextBlock Style="{StaticResource BtnTitle}" Text="Operators quit"/><TextBlock Style="{StaticResource BtnSub}" Text="keep launching vs quit"/></StackPanel></Button>
+                        <Button x:Name="BtnWorking" Click="RunWorking" Margin="0,0,6,6"
+                                ToolTip="Disposal and avoidance settings: never deorbited, poor, today's practice, best, yours"><StackPanel><TextBlock Style="{StaticResource BtnTitle}" Text="Working satellites"/><TextBlock Style="{StaticResource BtnSub}" Text="disposal + avoidance"/></StackPanel></Button>
+                        <Button x:Name="BtnRemoval" Click="RunRemoval" Margin="0,0,6,6"
+                                ToolTip="Belt growth vs large dead objects removed a year"><StackPanel><TextBlock Style="{StaticResource BtnTitle}" Text="Removal"/><TextBlock Style="{StaticResource BtnSub}" Text="removals a year"/></StackPanel></Button>
+                    </WrapPanel>
+                </DockPanel>
+                <!-- Views tied to one engine by what they need; the small line says which and why -->
+                <DockPanel Margin="0,4,0,0">
+                    <StackPanel DockPanel.Dock="Left" Width="118" Margin="0,4,6,0">
+                        <TextBlock Text="FIXED ENGINE" FontFamily="Consolas" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource Cyan}"/>
+                        <TextBlock Text="regardless of selection" FontSize="10.5" Foreground="{StaticResource Dim}"/>
+                    </StackPanel>
+                    <WrapPanel>
+                        <Button x:Name="BtnGlobe" Click="RunGlobe" Margin="0,0,6,6"
+                                ToolTip="Every object of one cube run around the Earth, every 5 years: drag to turn, slide through the years. Cube engine: only it has each object's position.">
+                            <StackPanel><TextBlock Style="{StaticResource BtnTitle}" Text="Globe"/><TextBlock Style="{StaticResource BtnSub}" Text="cube · positions"/></StackPanel>
+                        </Button>
+                        <Button x:Name="BtnUse" Click="RunUsability" Margin="0,0,6,6"
+                                ToolTip="Collision risk per satellite by altitude, and how long debris stays. Box model: smooth per-shell rates.">
+                            <StackPanel><TextBlock Style="{StaticResource BtnTitle}" Text="Usability by altitude"/><TextBlock Style="{StaticResource BtnSub}" Text="box · per-shell rates"/></StackPanel>
+                        </Button>
+                        <Button x:Name="BtnBarrels" Click="RunBarrels" Margin="0,0,6,6"
+                                ToolTip="How many barrels to move the belt, vs one ASAT strike. Box model: a barrel's effect is far below the cube's seed-to-seed scatter.">
+                            <StackPanel><TextBlock Style="{StaticResource BtnTitle}" Text="Scale check (barrels)"/><TextBlock Style="{StaticResource BtnSub}" Text="box · resolves small effects"/></StackPanel>
+                        </Button>
+                        <Button x:Name="BtnCompare" Click="RunComparison" Margin="0,0,6,6"
+                                ToolTip="Barrel vs ASAT vs traffic on one measure. Box model: a barrel's effect is far below the cube's seed-to-seed scatter.">
+                            <StackPanel><TextBlock Style="{StaticResource BtnTitle}" Text="Comparison"/><TextBlock Style="{StaticResource BtnSub}" Text="box · resolves small effects"/></StackPanel>
+                        </Button>
+                        <Button x:Name="BtnNasa" Click="RunNasa" Margin="0,0,6,6"
+                                ToolTip="The model against NASA's LEGEND and the IADC study: collision rates, growth without launches, removals to stabilise. The cube's 2006 benchmark is in data/benchmark_2006.json.">
+                            <StackPanel><TextBlock Style="{StaticResource BtnTitle}" Text="NASA comparison"/><TextBlock Style="{StaticResource BtnSub}" Text="box · collision rates"/></StackPanel>
+                        </Button>
+                        <Button x:Name="BtnEngines" Click="RunEngines" Margin="0,0,6,6"
+                                ToolTip="Box, discrete and cube engines on the same inputs, no barrel: how far they agree">
+                            <StackPanel><TextBlock Style="{StaticResource BtnTitle}" Text="Engines side by side"/><TextBlock Style="{StaticResource BtnSub}" Text="box · discrete · cube"/></StackPanel>
+                        </Button>
+                        <Button x:Name="BtnFlux" Click="RunFlux" Margin="0,0,6,6"
+                                ToolTip="Single-nail lethality, drag lifetime and flux (text)">
+                            <StackPanel><TextBlock Style="{StaticResource BtnTitle}" Text="Lethality &amp; Flux"/><TextBlock Style="{StaticResource BtnSub}" Text="nail physics"/></StackPanel>
+                        </Button>
+                        <Button x:Name="BtnSave" Content="Save PNG" Click="SavePng" Margin="12,0,6,6" Background="#15314A"
+                                ToolTip="Save the current chart (and its text) as a PNG"/>
+                    </WrapPanel>
+                </DockPanel>
+            </StackPanel>
             <Border DockPanel.Dock="Bottom" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
                     BorderThickness="1" CornerRadius="8" Height="220" Margin="0,10,0,0">
                 <TextBox x:Name="ResultsBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
@@ -153,6 +233,32 @@
                     <TextBlock x:Name="ChartHint" Text="Load complete — pick an analysis above."
                                Foreground="{StaticResource Dim}" HorizontalAlignment="Center"
                                VerticalAlignment="Center"/>
+                    <Image x:Name="GlobeImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top"
+                           Visibility="Collapsed" Cursor="SizeAll"
+                           MouseLeftButtonDown="Globe_MouseDown" MouseMove="Globe_MouseMove" MouseLeftButtonUp="Globe_MouseUp"/>
+                    <StackPanel x:Name="GlobeOverlay" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14,10,0,0"
+                                Visibility="Collapsed" IsHitTestVisible="False">
+                        <TextBlock x:Name="GlobeTitle" FontSize="15" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="GlobeStats" FontSize="11.5" Foreground="{StaticResource Dim}" Margin="0,2,0,8"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,2"><Ellipse Width="8" Height="8" Fill="#7FA8D0" Margin="0,0,7,0"/><TextBlock FontSize="11" Text="intact: dead satellites, rocket bodies"/></StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,2"><Ellipse Width="8" Height="8" Fill="#40F28C" Margin="0,0,7,0"/><TextBlock FontSize="11" Text="working satellites"/></StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,2">
+                            <Rectangle Width="8" Height="8" Margin="0,0,7,0"><Rectangle.Fill><LinearGradientBrush StartPoint="0,0" EndPoint="1,0"><GradientStop Color="#FF0000" Offset="0"/><GradientStop Color="#FFFF00" Offset="1"/></LinearGradientBrush></Rectangle.Fill></Rectangle>
+                            <TextBlock FontSize="11" Text="debris ≥10 cm, by altitude: red 700 km → yellow 1,100 km"/></StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,2"><Ellipse Width="8" Height="8" Fill="#D973FF" Margin="0,0,7,0"/><TextBlock FontSize="11" Text="nails"/></StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,2"><Ellipse Width="8" Height="8" Fill="#738CB3" Margin="0,0,7,0"/><TextBlock FontSize="11" Text="debris 1–10 cm (when shown)"/></StackPanel>
+                    </StackPanel>
+                    <StackPanel x:Name="GlobeControls" Orientation="Horizontal" VerticalAlignment="Bottom"
+                                HorizontalAlignment="Center" Margin="0,0,0,6" Visibility="Collapsed">
+                        <TextBlock Text="Year" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{StaticResource Dim}"/>
+                        <Slider x:Name="GlobeSlider" Width="320" Minimum="0" Maximum="10" Value="0"
+                                IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center"
+                                ValueChanged="GlobeSlider_ValueChanged"/>
+                        <TextBlock x:Name="GlobeYear" Text="0" VerticalAlignment="Center" Margin="8,0,16,0"
+                                   Foreground="{StaticResource Ink}" FontFamily="Consolas" Width="30"/>
+                        <CheckBox x:Name="GlobeSmall" Content="show 1–10 cm debris" VerticalAlignment="Center" Margin="0"
+                                  Checked="GlobeOption_Changed" Unchecked="GlobeOption_Changed"/>
+                    </StackPanel>
                     <StackPanel x:Name="UsabilityControls" Orientation="Horizontal" VerticalAlignment="Bottom"
                                 HorizontalAlignment="Center" Margin="0,0,0,6" Visibility="Collapsed">
                         <TextBlock Text="Year" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{StaticResource Dim}"/>

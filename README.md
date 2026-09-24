@@ -79,10 +79,18 @@ export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # or a generic Wind
 the left panel and draws it the way the deck does: the metric is debris ≥10 cm in the 700–1,100 km
 belt, and growth is "×" over today's belt objects.
 
+**Engine.** With *Cube* selected (the default), Tipping, Operators quit, Working satellites and Removal
+run the cube engine on the GPU as a seed ensemble (*Seeds*, default 8): the mean is drawn, the seed range
+shaded (or as whiskers on bars), and the box model dashed as a cross-check. A cube run takes about 10 s,
+and a seed ensemble runs in parallel; progress shows on the chart. *Box model* runs those views
+deterministically in seconds. Scale check, Comparison and Usability always use the box model, which
+resolves effects smaller than the cube's seed-to-seed scatter (one barrel adds under 1% to the belt).
+
 | View | What it shows |
 |---|---|
 | Lethality & Flux | single-nail lethality, drag lifetime and flux (text) |
-| Evolve (box) / Cascade (discrete) / Conjunction (cube) | belt debris over time, with and without the barrel; the working fleet when ticked |
+| Evolve (box) / Cascade (discrete) / Conjunction (cube) | belt debris over time, with and without the barrel; the working fleet when ticked (one run each) |
+| Globe (cube) | every object of one cube run around the Earth every 5 years: intact objects, debris ≥10 cm coloured by altitude, nails, working satellites, and 1–10 cm debris on request; drag to turn, slide through the years |
 | Usability by altitude | collision risk per satellite by altitude (today and with the barrel, year slider), the belt, the walk-away line, and how long a fragment stays (right axis) |
 | Scale check (barrels) | belt and all-object change vs number of barrels at the release altitude, with one ASAT strike for scale |
 | Comparison | barrel, ASAT and traffic on one measure: extra belt objects after the horizon |

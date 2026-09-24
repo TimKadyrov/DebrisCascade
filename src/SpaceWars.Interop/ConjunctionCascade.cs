@@ -18,6 +18,9 @@ namespace SpaceWars.Interop;
 /// Super-particles (weight = real objects represented) keep it tractable; a coarsening pass
 /// bounds the particle count in a violent runaway without capping the represented total.
 /// </summary>
+/// <summary>One moment of a cube run for the globe view: positions [km], weights and kinds of the live particles.</summary>
+public sealed record GlobeSnapshot(double Year, float[] X, float[] Y, float[] Z, float[] Weight, byte[] Kind);
+
 public sealed class ConjunctionCascade
 {
     public double CubeKm { get; init; } = 20.0;
@@ -265,17 +268,17 @@ public sealed class ConjunctionCascade
     public double TotalObjects() { double t = 0; for (int i = 0; i < _w.Count; i++) if (_alive[i]) t += _w[i]; return t; }
     public double TotalNails() { double t = 0; for (int i = 0; i < _w.Count; i++) if (_alive[i] && _isNail[i]) t += _w[i]; return t; }
     private static readonly double TrackableAreaM2 = BreakupModel.AreaFromLc(0.1);
-    /// <summary>Objects ≥10 cm (by cross-section; nails excluded) — the catalogued/catalogable population.</summary>
-    public double TotalTrackable() => TotalTrackable(double.NegativeInfinity, double.PositiveInfinity);
-    /// <summary>Objects ≥10 cm with mean altitude in [lo, hi) km.</summary>
+    /// <summary>Objects ≥10 cm (by cross-section; nails and working satellites excluded) in LEO (200–2,000 km),
+    /// each weighted by its orbit's time there — NASA's effective number, as the box model counts.</summary>
+    public double TotalTrackable() => TotalTrackable(200, 2000);
+    /// <summary>Objects ≥10 cm between two altitudes [km], each weighted by its orbit's time in that band.</summary>
     public double TotalTrackable(double loKm, double hiKm)
     {
         double t = 0;
         for (int i = 0; i < _w.Count; i++)
         {
             if (!_alive[i] || _isNail[i] || _working[i] || _area[i] < TrackableAreaM2) continue;
-            double alt = _els[i].SemiMajorAxis - Constants.EarthRadiusKm;
-            if (alt >= loKm && alt < hiKm) t += _w[i];
+            t += _w[i] * OrbitGeometry.TimeBetweenAltitudes(_els[i].SemiMajorAxis, _els[i].Eccentricity, loKm, hiKm);
         }
         return t;
     }
@@ -877,10 +880,34 @@ public sealed class ConjunctionCascade
         return total;
     }
 
-    public CascadeResult Run(double horizonYears = 50, double dtDays = 60)
+    /// <summary>
+    /// Where everything is right now: each live particle's ECI position [km], the objects it stands for, and its kind
+    /// (0 intact satellite / rocket body, 1 debris ≥10 cm, 2 debris 1–10 cm, 3 nails, 4 working satellite) — for the
+    /// tool's 3D globe.
+    /// </summary>
+    public GlobeSnapshot Snapshot(double year)
     {
+        double[] st = PropagateState(_simSec);
+        var idx = Enumerable.Range(0, _els.Count).Where(i => _alive[i]).ToArray();
+        var x = new float[idx.Length]; var y = new float[idx.Length]; var z = new float[idx.Length]; var w = new float[idx.Length]; var k = new byte[idx.Length];
+        for (int n = 0; n < idx.Length; n++)
+        {
+            int i = idx[n];
+            x[n] = (float)st[6 * i]; y[n] = (float)st[6 * i + 1]; z[n] = (float)st[6 * i + 2]; w[n] = (float)_w[i];
+            k[n] = _isNail[i] ? (byte)3 : _working[i] ? (byte)4 : _mass[i] >= IntactMinMassKg && _tag[i] is "PAY" or "R/B" or "LAUNCH" or "DEAD" ? (byte)0
+                 : _area[i] >= TrackableAreaM2 ? (byte)1 : (byte)2;
+        }
+        return new GlobeSnapshot(year, x, y, z, w, k);
+    }
+
+    public CascadeResult Run(double horizonYears = 50, double dtDays = 60) => Run(horizonYears, dtDays, null);
+
+    /// <summary>Run to the horizon; <paramref name="onYear"/> is called at year 0 and after each whole year.</summary>
+    public CascadeResult Run(double horizonYears, double dtDays, Action<double>? onYear)
+    {
+        onYear?.Invoke(0);
         var yr = new List<double> { 0 }; var tot = new List<double> { TotalObjects() }; var trk = new List<double> { TotalTrackable() }; var belt = new List<double> { TotalTrackable(BeltLoKm, BeltHiKm) };
-        var cs = new List<double> { TotalCrossSection() }; var cpy = new List<double> { 0 }; var nl = new List<double> { TotalNails() }; var wk = new List<double> { TotalWorking() }; var eff = new List<double> { EffectiveLeoTrackable() };
+        var cs = new List<double> { TotalCrossSection() }; var cpy = new List<double> { 0 }; var nl = new List<double> { TotalNails() }; var wk = new List<double> { TotalWorking() }; var eff = new List<double> { EffectiveLeoTrackable() }; var lf = new List<double> { LastLaunchThrottle };
         double catAccum = 0, t = 0, nextYear = 0, doneDays = 0, totalDays = horizonYears * 365.25;
         // Last step is shortened so the run ends exactly on the horizon (and records its final year).
         while (doneDays < totalDays - 1e-9)
@@ -893,10 +920,11 @@ public sealed class ConjunctionCascade
             if (t >= nextYear + 1 - 1e-9)
             {
                 nextYear += 1;
-                yr.Add(t); tot.Add(TotalObjects()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); cs.Add(TotalCrossSection()); cpy.Add(catAccum); nl.Add(TotalNails()); wk.Add(TotalWorking()); eff.Add(EffectiveLeoTrackable());
+                onYear?.Invoke(Math.Round(t));
+                yr.Add(t); tot.Add(TotalObjects()); trk.Add(TotalTrackable()); belt.Add(TotalTrackable(BeltLoKm, BeltHiKm)); cs.Add(TotalCrossSection()); cpy.Add(catAccum); nl.Add(TotalNails()); wk.Add(TotalWorking()); eff.Add(EffectiveLeoTrackable()); lf.Add(LastLaunchThrottle);
                 catAccum = 0;
             }
         }
-        return new CascadeResult { Years = yr.ToArray(), TotalObjects = tot.ToArray(), TotalCrossSection = cs.ToArray(), CatastrophicPerYear = cpy.ToArray(), SurvivingNails = nl.ToArray(), TrackableObjects = trk.ToArray(), BeltTrackableObjects = belt.ToArray(), WorkingSatellites = wk.ToArray(), LeoEffectiveTrackable = eff.ToArray() };
+        return new CascadeResult { Years = yr.ToArray(), TotalObjects = tot.ToArray(), TotalCrossSection = cs.ToArray(), CatastrophicPerYear = cpy.ToArray(), SurvivingNails = nl.ToArray(), TrackableObjects = trk.ToArray(), BeltTrackableObjects = belt.ToArray(), WorkingSatellites = wk.ToArray(), LeoEffectiveTrackable = eff.ToArray(), LaunchFraction = lf.ToArray() };
     }
 }

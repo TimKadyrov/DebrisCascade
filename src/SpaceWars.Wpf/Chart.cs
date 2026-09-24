@@ -54,8 +54,11 @@ internal sealed class Chart
     public sealed record YBand(double Y0, double Y1, Color Color, string Label);
     public sealed record Note(double X, double Y, string Text, Color Color, bool Bold = true, bool Axis2 = false,
         double Dx = 6, double Dy = -18);
-    public sealed record BarSet(string Name, Color Color, double[] Values, Color[]? Colors = null);
+    /// <summary>Bars on the categories; <paramref name="Lo"/>/<paramref name="Hi"/> draw a range whisker on each bar.</summary>
+    public sealed record BarSet(string Name, Color Color, double[] Values, Color[]? Colors = null, double[]? Lo = null, double[]? Hi = null);
     public sealed record Marker(int Category, int Set, double Mean, double Lo, double Hi, string Name);
+    /// <summary>A shaded range between two curves (e.g. the seed range of an ensemble).</summary>
+    public sealed record Spread(Color Color, double[] X, double[] Lo, double[] Hi);
 
     public string XLabel = "", YLabel = "", Y2Label = "", Tag = "";
     public bool LogY, LogY2;
@@ -74,6 +77,7 @@ internal sealed class Chart
     public string[]? Categories;
     public readonly List<BarSet> Bars = new();
     public readonly List<Marker> Markers = new();
+    public readonly List<Spread> Spreads = new();
 
     public void Draw(Canvas c)
     {
@@ -94,7 +98,7 @@ internal sealed class Chart
         }
         if (xmax <= xmin) xmax = xmin + 1;
         var ys = Lines.Where(l => !l.Axis2).SelectMany(l => l.Y).Concat(Refs.Select(r => r.Y)).Concat(YBands.SelectMany(b => new[] { b.Y0, b.Y1 }))
-                      .Concat(Bars.SelectMany(b => b.Values)).Concat(Markers.SelectMany(m => new[] { m.Lo, m.Hi }))
+                      .Concat(Bars.SelectMany(b => b.Values.Concat(b.Hi ?? Array.Empty<double>()))).Concat(Markers.SelectMany(m => new[] { m.Lo, m.Hi })).Concat(Spreads.SelectMany(p => p.Lo.Concat(p.Hi)))
                       .Where(v => double.IsFinite(v) && (!LogY || v > 0)).ToList();
         (double ymin, double ymax) = Range(ys, LogY, YMin, null, bars);
         if (Headroom > 1) ymax = LogY ? ymax * Headroom : ymin + (ymax - ymin) * Headroom;
@@ -174,8 +178,15 @@ internal sealed class Chart
                     var col = set.Colors is { } cs && k < cs.Length ? cs[k] : set.Color;
                     var r = new Rectangle { Width = Math.Max(1, z - a), Height = Math.Max(1, bot - top), Fill = new SolidColorBrush(col) };
                     Canvas.SetLeft(r, a); Canvas.SetTop(r, top); c.Children.Add(r);
-                    double fs = Math.Clamp((z - a) / 5.2, 8.5, 11);
-                    Add(c, Text(BarLabel(v), Palette.Ink, fs, true), (a + z) / 2, top - fs - 6, 0.5);
+                    double fs = Math.Clamp((z - a) / 5.2, 8.5, 11), labelTop = top;
+                    if (set.Lo is { } lo && set.Hi is { } hi && k < lo.Length && k < hi.Length && hi[k] > 0 && lo[k] > 0)
+                    {
+                        double mx = (a + z) / 2, pLo = PY(lo[k]), pHi = PY(hi[k]);
+                        c.Children.Add(Seg(mx, pLo, mx, pHi, Palette.Ink, 1));
+                        foreach (double yy in new[] { pLo, pHi }) c.Children.Add(Seg(mx - 3, yy, mx + 3, yy, Palette.Ink, 1));
+                        labelTop = Math.Min(top, pHi);
+                    }
+                    Add(c, Text(BarLabel(v), Palette.Ink, fs, true), (a + z) / 2, labelTop - fs - 6, 0.5);
                 }
             }
             foreach (var m in Markers)
@@ -186,6 +197,15 @@ internal sealed class Chart
                 var d = new Rectangle { Width = 8, Height = 8, Fill = Brushes.White, Stroke = new SolidColorBrush(Palette.Ink), RenderTransform = new RotateTransform(45, 4, 4) };
                 Canvas.SetLeft(d, px - 4); Canvas.SetTop(d, PY(m.Mean) - 4); c.Children.Add(d);
             }
+        }
+
+        // --- seed-range spreads ---
+        foreach (var sp in Spreads)
+        {
+            var poly = new Polygon { Fill = new SolidColorBrush(Palette.Alpha(sp.Color, 38)) };
+            for (int k = 0; k < sp.X.Length; k++) if (!LogY || sp.Hi[k] > 0) poly.Points.Add(new Point(PX(sp.X[k]), PY(sp.Hi[k])));
+            for (int k = sp.X.Length - 1; k >= 0; k--) if (!LogY || sp.Lo[k] > 0) poly.Points.Add(new Point(PX(sp.X[k]), PY(sp.Lo[k])));
+            c.Children.Add(poly);
         }
 
         // --- lines ---
