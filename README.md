@@ -89,6 +89,7 @@ belt, and growth is "×" over today's belt objects.
 | Operators quit | launching throughout vs operators throttling back and quitting |
 | Working satellites | never deorbited / poor / today's practice / best / your settings, at 50 and 500 a year |
 | Removal | belt growth vs large dead objects removed a year, with nothing added and with traffic |
+| NASA comparison | catastrophic collisions a year with nothing added (≥10 cm only and incl. 1–10 cm) against LEGEND and the IADC study, plus growth and removals to stabilise, with sources |
 
 "Working satellites (deorbit + dodge)" switches the box and cube engines to working satellites with the
 disposal, rocket-body, avoidance and lifetime fields below it. **Save PNG** writes the current chart and

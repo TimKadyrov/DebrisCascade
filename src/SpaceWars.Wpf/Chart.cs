@@ -51,6 +51,7 @@ internal sealed class Chart
         double Thickness = 2.2, bool Axis2 = false, bool Markers = false, bool Fill = false);
     public sealed record Ref(double Y, string Label, Color Color, bool LabelLeft = false);
     public sealed record Band(double X0, double X1, Color Color, string Label);
+    public sealed record YBand(double Y0, double Y1, Color Color, string Label);
     public sealed record Note(double X, double Y, string Text, Color Color, bool Bold = true, bool Axis2 = false,
         double Dx = 6, double Dy = -18);
     public sealed record BarSet(string Name, Color Color, double[] Values, Color[]? Colors = null);
@@ -68,6 +69,7 @@ internal sealed class Chart
     public readonly List<Curve> Lines = new();
     public readonly List<Ref> Refs = new();
     public readonly List<Band> Bands = new();
+    public readonly List<YBand> YBands = new();
     public readonly List<Note> Notes = new();
     public string[]? Categories;
     public readonly List<BarSet> Bars = new();
@@ -91,7 +93,7 @@ internal sealed class Chart
             xmin = xs.Count > 0 ? xs.Min() : 0; xmax = xs.Count > 0 ? xs.Max() : 1;
         }
         if (xmax <= xmin) xmax = xmin + 1;
-        var ys = Lines.Where(l => !l.Axis2).SelectMany(l => l.Y).Concat(Refs.Select(r => r.Y))
+        var ys = Lines.Where(l => !l.Axis2).SelectMany(l => l.Y).Concat(Refs.Select(r => r.Y)).Concat(YBands.SelectMany(b => new[] { b.Y0, b.Y1 }))
                       .Concat(Bars.SelectMany(b => b.Values)).Concat(Markers.SelectMany(m => new[] { m.Lo, m.Hi }))
                       .Where(v => double.IsFinite(v) && (!LogY || v > 0)).ToList();
         (double ymin, double ymax) = Range(ys, LogY, YMin, null, bars);
@@ -111,6 +113,13 @@ internal sealed class Chart
             var r = new Rectangle { Width = z - a, Height = yb - yt, Fill = new SolidColorBrush(b.Color) };
             Canvas.SetLeft(r, a); Canvas.SetTop(r, yt); c.Children.Add(r);
             if (b.Label.Length > 0) Add(c, Text(b.Label, Palette.Alpha(b.Color, 255), 11, true), (a + z) / 2, yt + 2, 0.5);
+        }
+        foreach (var b in YBands)
+        {
+            double top = PY(Math.Min(b.Y1, ymax)), bot = PY(Math.Max(b.Y0, ymin)); if (bot <= top) continue;
+            var r = new Rectangle { Width = x1 - x0, Height = bot - top, Fill = new SolidColorBrush(b.Color) };
+            Canvas.SetLeft(r, x0); Canvas.SetTop(r, top); c.Children.Add(r);
+            if (b.Label.Length > 0) Add(c, Text(b.Label, Palette.Alpha(b.Color, 255), 10.5, true), x1 - 6, top + 2, 1.0);
         }
         foreach (double tv in Ticks(ymin, ymax, LogY))
         {

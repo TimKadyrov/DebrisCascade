@@ -66,7 +66,7 @@ public partial class MainWindow : Window
         {
             ("evolve", BtnEvolve), ("cascade", BtnCascade), ("conjunction", BtnConj), ("usability", BtnUse),
             ("barrels", BtnBarrels), ("comparison", BtnCompare), ("tipping", BtnTip), ("operators", BtnOps),
-            ("working", BtnWorking), ("removal", BtnRemoval),
+            ("working", BtnWorking), ("removal", BtnRemoval), ("nasa", BtnNasa),
         };
         foreach (var (file, button) in views.Where(v => only.Length == 0 || only.Contains(v.File)))
         {
@@ -433,6 +433,44 @@ public partial class MainWindow : Window
         ch.Refs.Add(new(1, "×1 = held flat", Palette.Mute));
         if (!double.IsNaN(f0)) ch.Notes.Add(new(f0, 1, $"~{f0:F0}/yr holds it flat", Palette.Green));
         if (!double.IsNaN(f1)) ch.Notes.Add(new(f1, 1, $"~{f1:F0}/yr with {rate:F0}/yr added", Palette.Red));
+        return (sb.ToString(), Show(ch));
+    });
+
+    // ---------------------------------------------------------------- against NASA ------------------
+
+    private async void RunNasa(object s, RoutedEventArgs e) => await RunAsync("NASA comparison", (cat, i) =>
+    {
+        var n = Scenarios.NasaComparison(cat.Objects, i);
+        double Mean(double[] v, int from, int to) => Enumerable.Range(from, Math.Max(1, to - from + 1)).Where(k => k < v.Length).Select(k => v[k]).DefaultIfEmpty(0).Average();
+        int last = n.Years.Length - 1;
+        double first10 = Mean(n.CatastrophicTrackedOnly, 1, 10), last10 = Mean(n.CatastrophicTrackedOnly, last - 9, last);
+        double first10All = Mean(n.CatastrophicAllSizes, 1, 10), last10All = Mean(n.CatastrophicAllSizes, last - 9, last);
+        string F(double v) => double.IsNaN(v) ? ">20" : v.ToString("F0");
+        var sb = new StringBuilder("The model on NASA's terms: nothing added, no collision avoidance, every satellite dead from day one.\n\n");
+        sb.AppendLine("  what                        | NASA / IADC                                   | this model");
+        sb.AppendLine($"  growth with no launches     | LEO ≈ constant for 50 yr, then up (1)         | belt ×{n.BeltGrowthNoExplosions:0.00} without explosions, ×{n.BeltGrowth:0.00} with {i.ExplosionsPerYear:0.#}/yr");
+        sb.AppendLine($"  removals to stabilise       | ~5 a year (2, 3): 90% disposal, no explosions  | ~{F(n.HoldFlatNoExplosions)}/yr without explosions, ~{F(n.HoldFlat)}/yr with");
+        sb.AppendLine($"  catastrophic collisions/yr  | 0.11–0.20 (4); 0.054 (1), from ~10k objects   | ≥10 cm only: {first10:0.00} (first decade), {last10:0.00} (last)");
+        sb.AppendLine($"                              |                                               | incl. 1–10 cm impactors: {first10All:0.00}, {last10All:0.00}");
+        sb.AppendLine($"\nLEO objects ≥10 cm here: {n.LeoTrackable[0]:N0} → {n.LeoTrackable[^1]:N0} (the low, unmanoeuvred Starlink shells decay first).");
+        sb.AppendLine("Collision rate grows roughly with the square of the population, and today's is larger than NASA's starting");
+        sb.AppendLine("points (2006, 2009), which accounts for most of the gap. NASA's runs also allow no avoidance or future explosions;");
+        sb.AppendLine("the IADC runs add regular launches with 90% end-of-life disposal.");
+        sb.AppendLine("\n(1) Liou & Johnson 2006, Science   (2) Liou, Johnson & Hill 2010, Acta Astronautica   (3) Liou 2011, Adv. Space Res.");
+        sb.AppendLine("(4) IADC comparison study 2013: one catastrophic collision every 5–9 years, six agencies' models");
+
+        var ch = new Chart
+        {
+            XLabel = "years, nothing added", YLabel = "catastrophic collisions per year (log)", LogY = true, YMin = 0.03, Headroom = 4,
+            Y2Label = "LEO objects ≥10 cm", Y2Color = Palette.Mute, Y2Min = 0, Y2Fmt = Fmt.Num,
+            Tag = "box model · no launches, no avoidance · NASA figures from the sources listed",
+        };
+        var yr = n.Years.Skip(1).ToArray();
+        ch.YBands.Add(new(1.0 / 9, 1.0 / 5, Palette.Alpha(Palette.Green, 45), "IADC 2013: one every 5–9 years"));
+        ch.Refs.Add(new(10.8 / 200, "LEGEND, no launches (Liou & Johnson 2006)", Palette.Green, LabelLeft: true));
+        ch.Lines.Add(new("this model, ≥10 cm objects only", Palette.Blue, yr, n.CatastrophicTrackedOnly.Skip(1).ToArray()));
+        ch.Lines.Add(new("this model, incl. 1–10 cm impactors", Palette.Blue, yr, n.CatastrophicAllSizes.Skip(1).ToArray(), Dashed: true, Thickness: 1.4));
+        ch.Lines.Add(new("LEO objects ≥10 cm (right axis)", Palette.Mute, n.Years, n.LeoTrackable, Axis2: true, Thickness: 1.4));
         return (sb.ToString(), Show(ch));
     });
 

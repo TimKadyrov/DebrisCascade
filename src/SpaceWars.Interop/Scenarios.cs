@@ -184,19 +184,51 @@ public static class Scenarios
     /// <summary>A box model built from the inputs; any argument given overrides the matching input.</summary>
     public static KesslerEvolution Box(IReadOnlyList<CatalogObject> cat, ScenarioInputs i, double? launches = null,
         bool? working = null, double? removals = null, double? disposal = null, double? rocketBodies = null,
-        double? avoidance = null, bool? responsive = null)
+        double? avoidance = null, bool? responsive = null, double? explosions = null, double? smallBackground = null)
     {
         var m = new KesslerEvolution(MakeNail(i))
         {
             SolarActivity = i.SolarActivity, LaunchRatePerYear = launches ?? i.LaunchRatePerYear, LaunchAltKm = i.LaunchAltKm,
             ResponsiveLaunch = responsive ?? i.Responsive, LossTolerancePerYear = i.LossTolerance,
-            ExplosionsPerYear = i.ExplosionsPerYear, RemovalsPerYear = removals ?? i.RemovalsPerYear,
+            ExplosionsPerYear = explosions ?? i.ExplosionsPerYear, RemovalsPerYear = removals ?? i.RemovalsPerYear,
             WorkingSatellites = working ?? i.WorkingSatellites, DisposalSuccess = disposal ?? i.DisposalSuccess,
             RocketBodyDisposal = rocketBodies ?? i.RocketBodyDisposal, AvoidanceSuccess = avoidance ?? i.AvoidanceSuccess,
             SatelliteLifetimeYears = i.SatelliteLifetimeYears,
         };
-        m.SeedFromCatalog(cat);
+        m.SeedFromCatalog(cat, backgroundSmallTotal: smallBackground ?? 1_000_000);
         return m;
+    }
+
+    /// <summary>
+    /// The model against NASA's published LEGEND/IADC results, on their terms: nothing added, no collision
+    /// avoidance, every satellite dead from day one. Catastrophic collisions per year counted two ways —
+    /// ≥10 cm objects only (LEGEND's convention: the run without the modelled 1–10 cm field) and with 1–10 cm
+    /// impactors — plus LEO objects ≥10 cm over time, belt growth, and the removals a year that hold the belt
+    /// flat, with and without explosions.
+    /// </summary>
+    public sealed record NasaResult(double[] Years, double[] CatastrophicTrackedOnly, double[] CatastrophicAllSizes,
+        double[] LeoTrackable, double BeltGrowthNoExplosions, double BeltGrowth, double LeoGrowth,
+        double HoldFlatNoExplosions, double HoldFlat);
+
+    public static NasaResult NasaComparison(IReadOnlyList<CatalogObject> cat, ScenarioInputs i)
+    {
+        var tracked = Box(cat, i, launches: 0, working: false, removals: 0, smallBackground: 0).Run(i.HorizonYears, 10);
+        var all = Box(cat, i, launches: 0, working: false, removals: 0).Run(i.HorizonYears, 10);
+        double today = BeltToday(cat, i);
+        double Growth(double explosions, double removals) =>
+            BeltEnd(Box(cat, i, launches: 0, working: false, removals: removals, explosions: explosions), i) / today;
+        double[] rem = { 0, 2, 4, 6, 8, 10, 12, 15, 20 };
+        double Flat(double explosions)
+        {
+            var g = rem.AsParallel().AsOrdered().Select(r => Growth(explosions, r)).ToArray();
+            if (g[0] <= 1) return 0;
+            for (int k = 1; k < rem.Length; k++)
+                if (g[k] <= 1) return rem[k - 1] + (g[k - 1] - 1) / (g[k - 1] - g[k]) * (rem[k] - rem[k - 1]);
+            return double.NaN;
+        }
+        return new NasaResult(tracked.Years, tracked.CatastrophicPerYear, all.CatastrophicPerYear, tracked.TrackableObjects,
+            Growth(0, 0), Growth(i.ExplosionsPerYear, 0), tracked.TrackableObjects[^1] / tracked.TrackableObjects[0],
+            Flat(0), Flat(i.ExplosionsPerYear));
     }
 
     /// <summary>Today's belt objects ≥10 cm (700–1,100 km), every satellite counted — the growth yardstick.</summary>

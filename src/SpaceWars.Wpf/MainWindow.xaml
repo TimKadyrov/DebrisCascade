@@ -134,6 +134,8 @@
                         ToolTip="Disposal and avoidance settings: never deorbited, poor, today's practice, best, yours"/>
                 <Button x:Name="BtnRemoval" Content="Removal" Click="RunRemoval" Margin="0,0,6,6"
                         ToolTip="Belt growth vs large dead objects removed a year"/>
+                <Button x:Name="BtnNasa" Content="NASA comparison" Click="RunNasa" Margin="0,0,6,6"
+                        ToolTip="The model against NASA's LEGEND and the IADC study: collision rates, growth without launches, removals to stabilise"/>
                 <Button x:Name="BtnSave" Content="Save PNG" Click="SavePng" Margin="12,0,6,6" Background="#15314A"
                         ToolTip="Save the current chart (and its text) as a PNG"/>
             </WrapPanel>
