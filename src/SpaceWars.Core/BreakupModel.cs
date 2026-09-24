@@ -26,6 +26,8 @@ public static class BreakupModel
     /// Effective mass [kg] fed into the size-distribution law.
     /// Catastrophic: sum of both masses. Non-catastrophic: projectile mass scaled by the
     /// square of the impact speed in km/s (the model's empirical cratering-mass proxy).
+    /// Johnson et al. (2001) print the speed to the first power; NASA's implementation note
+    /// (Krisko 2011, ODQN 15(4), Eq. 4) gives Mp·v², which is what LEGEND uses and we follow.
     /// </summary>
     public static double EffectiveMass(double targetMassKg, double projectileMassKg, double relVelMetersPerSec)
     {

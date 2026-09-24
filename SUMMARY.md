@@ -117,11 +117,14 @@ The belt is not doomed; it is a maintenance problem whose size is set by launch 
 - **Checked against NASA.** The model agrees in direction with NASA's LEGEND model. With no new
   launches, LEO keeps growing (Liou & Johnson 2006, *Science*: roughly flat for 50 years, then
   up; here the belt grows from the start, ×1.15 even without explosions). Removing ~5 large
-  objects a year stabilises LEO (Liou, Johnson & Hill 2010; Liou 2011: with 90% end-of-life
-  disposal, over 200 years; here ~6–10 hold the belt flat). Counting ≥10 cm objects only, our
+  objects a year stabilises LEO (Liou, Johnson & Hill 2010; Liou 2011: regular launches, 90%
+  end-of-life disposal and no explosions, over 200 years; here ~6 hold the belt flat with
+  explosions prevented, ~10 without). Counting ≥10 cm objects only, our
   no-launch catastrophic-collision rate is 0.6 a year in the first decade and 0.34 a year by years
-  40–50, i.e. ~2–5× the one every 5–9 years in the six-agency IADC comparison study (2013). That
-  fits a larger population today and no collision avoidance in the model. With 1–10 cm
+  40–50, i.e. ~2–5× the one every 5–9 years in the six-agency IADC comparison study (2013). The IADC
+  models also allowed no future explosions and no collision avoidance, and started from the
+  smaller 2009 population, so the gap mainly reflects today's larger population (~28,000 LEO
+  objects ≥10 cm at our start). With 1–10 cm
   impactors counted too, the rate roughly doubles; the ≥10 cm belt figures don't change. A
   direct benchmark (rerunning a published LEGEND scenario from its own initial population) has
   not been done.
