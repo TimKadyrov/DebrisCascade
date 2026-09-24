@@ -2,7 +2,7 @@
 launch-driven runaway (~65x debris). Synthetic populations on realistic LEO orbits."""
 import os, math
 import numpy as np
-import matplotlib
+import matplotlib, matplotlib.transforms
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -39,7 +39,7 @@ frames = [
     dict(name="extreme1", N=4000, seed=1, color="#7fa8d0", s=3.0, alpha=0.55, cmap=None,
          label="Today", sub=f"~{_r['constantBelt'][0]/1e3:.0f}k objects ≥10 cm in the belt"),
     dict(name="extreme2", N=60000, seed=2, color=None, s=1.3, alpha=0.35, cmap="autumn",
-         label="After 50 yr", sub=f"500 satellites + rocket bodies injected a year, never deorbited\n~{_g:.0f}× objects ≥10 cm: the belt is a shell"),
+         label="After 50 yr", sub=f"500 satellites + rocket bodies a year,\nnever deorbited: ~{_g:.0f}× objects ≥10 cm"),
 ]
 
 for k, fr in enumerate(frames, 1):
@@ -62,6 +62,9 @@ for k, fr in enumerate(frames, 1):
               color=("#FF5A52" if k == 2 else "#e7eef8"), fontsize=28, weight="bold")
     ax.text2D(0.04, 0.055, fr["sub"], transform=ax.transAxes, color="#9fb2cc", fontsize=20, family="monospace")
     out = os.path.join(HERE, "frames", f"{fr['name']}.png")
-    fig.savefig(out, dpi=130, facecolor="#06080e", bbox_inches="tight", pad_inches=0.2)
+    # Fixed square crop (not a tight bbox): both frames come out the same square size, so a long caption
+    # can't widen one and squash its globe when the slide fits it into a square box.
+    fig.savefig(out, dpi=130, facecolor="#06080e",
+                bbox_inches=matplotlib.transforms.Bbox([[0.85, 0.85], [8.15, 8.15]]))
     plt.close(fig)
     print("saved", out, "N=", fr["N"])

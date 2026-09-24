@@ -34,7 +34,7 @@ brackets how much debris small impacts throw off: the breakup model as written v
 convention). But no number of barrels doubles the ≥10 cm belt: it tops out ~16% above the
 no-barrel run after 50 years, reached by ~300 barrels and not raised by more. One ASAT strike on a 1 t satellite at 865 km adds as many ≥10 cm objects as ~23 barrels.
 
-## The yardstick
+## For comparison
 
 A barrel's effect only means something next to what else moves the belt, so every source is
 put on one metric: extra objects ≥10 cm in the 700–1,100 km belt after 50 years, compared with
