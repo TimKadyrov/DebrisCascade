@@ -11,8 +11,9 @@ unusable. LEO's debris belt (700–1,100 km) *already grows slowly on its own*; 
 away is governed by **launch and removal policy**, against which a barrel of nails is a
 rounding error (no number of barrels doubles the belt's ≥10 cm population in 50 years; ~10
 removals a year hold it flat). Disposal reliability is the lever: 500 satellites and rocket bodies
-a year left dead at 900 km grow the belt ×87 in 50 years, but with working satellites deorbited at
-today's 90% rate, the same traffic grows it only ×4.3.
+a year left dead at 900 km grow the belt ×59 in 50 years, but with working satellites deorbited at
+today's 90% rate, the same traffic grows it only ×4.6. Rerun from NASA's own 2006 starting point,
+the cube engine reproduces LEGEND's 200-year benchmark: 11.5 catastrophic collisions (LEGEND 10.8).
 
 See **[SUMMARY.md](SUMMARY.md)** for a plain-language write-up, including the altitude analysis.
 
@@ -35,7 +36,7 @@ CelesTrak TLEs → CUDA J2 propagation → collision flux (spatial density)
 | `SpaceWars.Interop` | P/Invoke bindings (`Cuda`) + the tier-3 conjunction cascade |
 | `SpaceWars.Cli` | Assessment CLI and scenario runners |
 | `SpaceWars.Wpf` | Interactive analysis tool: the deck's analyses on your own inputs (see below) |
-| `SpaceWars.Tests` | 57 physics/GPU validation tests |
+| `SpaceWars.Tests` | 58 physics/GPU validation tests |
 
 ## Build & run
 
@@ -141,7 +142,15 @@ default inputs and exits.
   else left dead in place; launched rocket bodies are disposed of with `RocketBodyDisposal` (0.80).
   The defaults follow the evidence: the NASA/FCC/IADC 90% benchmark, ESA's 2025 rocket-body figure,
   and McDowell's manoeuvrable share of active satellites. `--deck` sweeps poor / today's practice /
-  best settings and cross-checks the baseline with the cube engine (8 seeds). Also a checkbox in the WPF tool.
+  best settings on the cube engine, with the box model as a cross-check. Also a checkbox in the WPF tool.
+- Engines in `--deck`: scenario results (tipping, operators, working satellites, removal,
+  explosions) are 16-seed cube-engine ensembles run in parallel on the GPU, reported as mean and
+  seed range; the barrel, ASAT and comparison figures, usability and the low-altitude event use
+  the deterministic box model, because those effects are smaller than the cube's seed scatter.
+- NASA benchmark (`--benchmark-2006 --cube-seeds 16`): the 1 Jan 2006 catalog, no launches or
+  explosions, 200 years, ≥10 cm only. Cube engine 11.5 catastrophic collisions (5–17), ~45% at
+  900–1,000 km, +10% in LEO at 50 years; box model 9.9 and +15%; LEGEND 10.8, ~60%, flat.
+  Intact objects use catalog-true mass classes, and eccentric orbits count only their time in LEO.
 - Box model uses a well-mixed shell assumption at 10 km/s. The conjunction Cube method uses real
   orbit geometry; `--calibrate` compares the two on the production population and they agree
   within ~5% (all collisions 1.01×, catastrophic 0.96× at 10,000 snapshots). The cube engine

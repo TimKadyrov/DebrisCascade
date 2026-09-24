@@ -18,6 +18,7 @@ AMBER = "#F2C14E"; INK = "#2A3646"; MUTE = "#7C8AA0"; GREEN = "#2BB673"
 plt.rcParams.update({"font.family": "DejaVu Sans", "axes.edgecolor": INK, "axes.labelcolor": INK,
                      "xtick.color": INK, "ytick.color": INK})
 CW = D["conventions"]["asWritten"]; LG = D["conventions"]["legend"]
+NS = D.get("seeds", 8); CUBE = f"cube engine, {NS} seeds (mean; band = seed range)"
 
 
 def fig(w, h, rect):
@@ -75,7 +76,10 @@ save(f, "deck_altitude.png")
 # --- Slide 14: belt growth vs launch rate ------------------------------------------------
 t = CW["tipping"]; rates = np.array(t["rates"]); gB = np.array(t["growthBelt"])
 f, ax = fig(11.56, 3.89, [0.075, 0.16, 0.90, 0.78])
-ax.plot(rates, gB, color=RED, lw=2.6, marker="o", ms=4)
+ax.fill_between(rates, t["growthBeltMin"], t["growthBeltMax"], color=RED, alpha=0.13, lw=0)
+ax.plot(rates, gB, color=RED, lw=2.6, marker="o", ms=4, label="cube engine (mean of seeds)")
+ax.plot(rates, t["boxGrowthBelt"], color=MUTE, lw=1.3, ls=(0, (4, 2)), label="box model (cross-check)")
+ax.legend(loc="lower right", fontsize=8.5, frameon=False, bbox_to_anchor=(1.0, 0.08))
 ax.axhline(1, color=MUTE, lw=1, ls=(0, (4, 3)))
 ax.set_yscale("log"); ax.set_xlim(0, 1000); ax.set_ylim(0.8, 700)
 ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"×{v:g}"))
@@ -89,7 +93,7 @@ for r, dx, dy in [(0, 90, 1.06), (50, 45, 0.8), (200, 25, 0.75), (500, 25, 0.75)
     ax.annotate(label, (r, g), xytext=(r + dx, g * dy), fontsize=9.5, color=RED, weight="bold",
                 ha="right" if dx < 0 else "left", arrowprops=dict(arrowstyle="-", color=RED, lw=0.7))
 ax.text(990, 1.06, "×1 = no growth", color=MUTE, fontsize=8.5, ha="right", va="bottom")
-tag(f, "box model · 50 years · satellites + rocket bodies injected at 900 km, never deorbited")
+tag(f, f"{CUBE} · 50 years · injected at 900 km, never deorbited")
 save(f, "deck_tipping.png")
 
 # --- Slide 15: constant vs responsive launch at 500/yr -----------------------------------
@@ -104,10 +108,10 @@ ax.set_yscale("log"); ax.set_xlim(0, 50)
 ax.yaxis.set_major_formatter(FuncFormatter(kfmt))
 ax.set_xlabel("years", fontsize=10); ax.set_ylabel("belt objects ≥10 cm", fontsize=9.5); ax.tick_params(labelsize=9)
 ax.text(q + 0.6, ax.get_ylim()[0] * 1.15, f"operators stop launching (yr {q:.0f})", color=MUTE, fontsize=9, va="bottom")
-ax.text(49.5, r5["constantBelt"][-1] * 0.8, f"×{r5['constantBelt'][-1] / r5['constantBelt'][0]:.0f}", color=RED, fontsize=11, weight="bold", ha="right", va="top")
+ax.text(49.5, r5["constantBelt"][-1] * 0.8, f"×{r5['constantGrowthBelt']:.0f}", color=RED, fontsize=11, weight="bold", ha="right", va="top")
 ax.text(49.5, r5["responsiveBelt"][-1] * 0.62, f"still ×{r5['growthAfterQuitBelt']:.1f} after they quit", color=BLUE, fontsize=10, weight="bold", ha="right", va="top")
 ax.legend(loc="upper left", fontsize=9, frameon=False)
-tag(f, "box model · 500 injected/yr at 900 km")
+tag(f, f"cube engine, mean of {NS} seeds · 500 injected/yr at 900 km")
 save(f, "deck_responsive.png")
 
 # --- Extreme case: belt under 500 objects/yr added ------------------------------
@@ -119,7 +123,7 @@ ax.yaxis.set_major_formatter(FuncFormatter(kfmt)); ax.tick_params(labelsize=8)
 ax.set_xlabel("years", fontsize=8.5); ax.set_ylabel("belt objects ≥10 cm", fontsize=8)
 ax.text(1, cb[0] * 1.9, f"{kfmt(cb[0])} today", fontsize=8, color=INK, va="bottom")
 ax.text(49, cb[-1] * 0.7, kfmt(cb[-1]), fontsize=9, color=RED, weight="bold", ha="right", va="top")
-tag(f, "box model · 500 satellites + rocket bodies injected/yr at 900 km, never deorbited")
+tag(f, f"cube engine, {NS} seeds")
 save(f, "deck_extreme.png")
 
 # --- Slide 19: extra risk from a big low-altitude breakup ---------------------------------
@@ -138,9 +142,13 @@ save(f, "deck_lowevent.png")
 R = D["removal"]; rr = np.array(R["removalsPerYear"])
 f, ax = fig(11.56, 3.89, [0.075, 0.16, 0.90, 0.78])
 ax.axhline(1, color=MUTE, lw=1, ls=(0, (4, 3)))
+ax.fill_between(rr, R["beltGrowthAt50LaunchesMin"], R["beltGrowthAt50LaunchesMax"], color=RED, alpha=0.12, lw=0)
+ax.fill_between(rr, R["beltGrowthNoLaunchesMin"], R["beltGrowthNoLaunchesMax"], color=GREEN, alpha=0.12, lw=0)
 ax.plot(rr, R["beltGrowthAt50Launches"], color=RED, lw=2.6, marker="o", ms=4, label="50 satellites + rocket bodies/yr injected, never deorbited")
 ax.plot(rr, R["beltGrowthNoLaunches"], color=GREEN, lw=2.6, marker="o", ms=4, label="nothing added")
-ax.set_xlim(0, 100); ax.set_ylim(0, max(R["beltGrowthAt50Launches"]) * 1.12)
+ax.plot(rr, R["box"]["beltGrowthAt50Launches"], color=MUTE, lw=1.2, ls=(0, (4, 2)), label="box model (cross-check)")
+ax.plot(rr, R["box"]["beltGrowthNoLaunches"], color=MUTE, lw=1.2, ls=(0, (4, 2)))
+ax.set_xlim(0, 100); ax.set_ylim(0, max(R["beltGrowthAt50LaunchesMax"]) * 1.12)
 ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"×{v:g}"))
 ax.set_xlabel("large dead objects removed per year (riskiest first)", fontsize=10)
 ax.set_ylabel("belt objects ≥10 cm after 50 yr", fontsize=9.5); ax.tick_params(labelsize=9)
@@ -151,17 +159,16 @@ for x, y, c, lab, dy in [(R["toHoldFlatNoLaunches"], 1, GREEN, f"~{R['toHoldFlat
                 arrowprops=dict(arrowstyle="-", color=c, lw=0.7))
 ax.text(99, 1.04, "×1 = held flat", color=MUTE, fontsize=8.5, ha="right", va="bottom")
 ax.legend(loc="upper right", fontsize=9, frameon=False)
-tag(f, "box model · 50 years · removals from year 0")
+tag(f, f"{CUBE} · 50 years · removals from year 0")
 save(f, "deck_removal.png")
 
 # --- For comparison: every source on one measure (extra belt objects >=10 cm after 50 yr vs adding nothing) ---
-bb = CW["baseline"]["beltTrackable"]; b0, bEnd = bb[0], bb[-1]
-gb = dict(zip(CW["tipping"]["rates"], CW["tipping"]["growthBelt"])); BR = CW["barrels"]
-YARD = [("1 barrel of nails (832 kg)", (BR["ratioBelt"][0] - 1) * bEnd, AMBER),
-        ("1 ASAT strike on a 1 t satellite", (CW["asat"]["ratioBelt"] - 1) * bEnd, ORANGE),
-        ("any number of barrels (ceiling)", (max(BR["ratioBelt"]) - 1) * bEnd, AMBER),
-        ("50 satellites + rocket bodies a year\ninjected, never deorbited", gb[50] * b0 - bEnd, RED),
-        ("500 satellites + rocket bodies a year\ninjected, never deorbited", gb[500] * b0 - bEnd, RED)]
+CP = D["comparison"]; bEnd = CW["baseline"]["beltTrackable"][-1]
+YARD = [("1 barrel of nails (832 kg)", CP["oneBarrel"], AMBER),
+        ("1 ASAT strike on a 1 t satellite", CP["asat"], ORANGE),
+        ("any number of barrels (ceiling)", CP["barrelCeiling"], AMBER),
+        ("50 satellites + rocket bodies a year\ninjected, never deorbited", CP["traffic50"], RED),
+        ("500 satellites + rocket bodies a year\ninjected, never deorbited", CP["traffic500"], RED)]
 f, ax = fig(11.56, 3.89, [0.30, 0.16, 0.66, 0.80])
 ys = np.arange(len(YARD))[::-1]
 ax.barh(ys, [v for _, v, _ in YARD], color=[c for _, _, c in YARD], height=0.62)
@@ -169,10 +176,10 @@ ax.set_xscale("log"); ax.set_xlim(5, 5e6)
 ax.set_yticks(ys); ax.set_yticklabels([n for n, _, _ in YARD], fontsize=10)
 ax.xaxis.set_major_formatter(FuncFormatter(kfmt)); ax.tick_params(axis="x", labelsize=9)
 ax.tick_params(axis="y", length=0); ax.spines["left"].set_visible(False)
-ax.set_xlabel(f"extra objects ≥10 cm in the 700–1,100 km belt after 50 years  (vs adding nothing: {kfmt(bEnd)})", fontsize=10)
+ax.set_xlabel("extra objects ≥10 cm in the 700–1,100 km belt after 50 years, vs adding nothing", fontsize=10)
 for y, (_, v, c) in zip(ys, YARD):
     ax.text(v * 1.25, y, f"+{float(f'{v:.2g}'):,.0f}", va="center", fontsize=10, weight="bold", color=INK)
-tag(f, "box model · everything at 900 km (ASAT 865 km)")
+tag(f, "box model (deterministic: resolves effects smaller than seed scatter) · 900 km, ASAT 865 km")
 save(f, "deck_comparison.png")
 
 # --- Working satellites: disposal + avoidance vs never deorbited (belt debris after 50 yr) ---------
@@ -187,14 +194,11 @@ if "working" in D:
         ri = rates.index(rate)
         for k, (key, lab, col) in enumerate(order):
             g = sw[key]["runs"][ri]["growth"]; x = gi + (k - 1.5) * bw
+            run = sw[key]["runs"][ri]
             ax.bar(x, g, width=bw * 0.92, color=col, label=lab if gi == 0 else None)
-            ax.text(x, g * 1.08, f"×{g:.1f}" if g < 10 else f"×{g:.0f}", ha="center", va="bottom", fontsize=9.5, weight="bold", color=INK)
-            if key == "baseline":
-                cb = next((c for c in W["cubeBaseline"] if c["launchesPerYear"] == rate), None)
-                if cb:
-                    v = np.array(cb["conjunction"]); m = v.mean()
-                    ax.errorbar(x + bw * 0.28, m, yerr=[[m - v.min()], [v.max() - m]], fmt="D", ms=4.5, color=INK, mfc="white",
-                                capsize=3, lw=1, label="cube cross-check (8 seeds)" if gi == 0 else None)
+            ax.errorbar(x, g, yerr=[[g - run["growthMin"]], [run["growthMax"] - g]], fmt="none", ecolor=INK, capsize=2.5, lw=0.9)
+            ax.text(x - bw * 0.2, run["growthMax"] * 1.06, f"×{g:.1f}" if g < 10 else f"×{g:.0f}", ha="center", va="bottom", fontsize=9, weight="bold", color=INK)
+            ax.plot(x + bw * 0.3, run["boxGrowth"], "D", ms=4.2, color=INK, mfc="white", label="box model (cross-check)" if gi == 0 and k == 0 else None)
     base0 = sw["neverDeorbited"]["runs"][rates.index(0)]["growth"]
     ax.axhline(base0, color=MUTE, lw=1, ls=(0, (4, 3)))
     ax.text(-0.92, base0 * 1.04, f"nothing added ×{base0:.2f}", color=MUTE, fontsize=8.5, ha="left", va="bottom")
@@ -204,37 +208,37 @@ if "working" in D:
     ax.set_xticklabels([f"{r:.0f} satellites + rocket bodies a year at 900 km" for r in groups], fontsize=10)
     ax.set_xlim(-0.95, len(groups) - 0.45)
     ax.set_ylabel("belt debris ≥10 cm after 50 yr", fontsize=9.5); ax.tick_params(axis="y", labelsize=9)
-    h, l = ax.get_legend_handles_labels(); o = [i for i, x in enumerate(l) if not x.startswith("cube")] + [i for i, x in enumerate(l) if x.startswith("cube")]
+    h, l = ax.get_legend_handles_labels(); o = [i for i, x in enumerate(l) if not x.startswith("box")] + [i for i, x in enumerate(l) if x.startswith("box")]
     ax.legend([h[i] for i in o], [l[i] for i in o], loc="upper left", fontsize=8.5, frameon=False,
               title="deorbited satellites / rocket bodies / conjunctions avoided", title_fontsize=8.5, ncol=1)
-    tag(f, "box model · 50 years · vs today's belt objects ≥10 cm; working satellites not counted as debris")
+    tag(f, f"{CUBE} · 50 years · vs today's belt objects ≥10 cm; working satellites not counted as debris")
     save(f, "deck_working.png")
 
 # --- NASA benchmark: the 1 Jan 2006 catalog, no launches, 200 years, vs LEGEND (Liou & Johnson 2006) ---------
 BP = os.path.join(HERE, "..", "data", "benchmark_2006.json")
 if os.path.exists(BP):
     B = json.load(open(BP, encoding="utf-8")); runs = {r["Name"]: r for r in B["runs"]}
-    old = runs.get("before: two intact mass classes, mean-altitude shells"); new = runs.get("finer masses + eccentric orbits")
+    new = runs.get("finer masses + eccentric orbits")
     cubes = [r for r in B["runs"] if r["Name"].startswith("cube engine")]
     def g50(r):
         y = r["Years"]; k = min(range(len(y)), key=lambda i: abs(y[i] - 50)); return (r["LeoTrackable"][k] / r["LeoTrackable"][0] - 1) * 100
-    f, axs = plt.subplots(1, 2, figsize=(5.4, 2.35), dpi=200, facecolor="white")
-    f.subplots_adjust(left=0.1, right=0.98, top=0.8, bottom=0.2, wspace=0.45)
-    labels = ["NASA\nLEGEND", "old\nbox", "box", "cube"]
+    f, axs = plt.subplots(1, 2, figsize=(4.4, 2.0), dpi=240, facecolor="white")
+    f.subplots_adjust(left=0.1, right=0.98, top=0.78, bottom=0.24, wspace=0.42)
+    labels = ["NASA\nLEGEND", "box\nmodel", "cube\nengine"]
     for ax, (title, legend_v, fn) in zip(axs, [("catastrophic collisions\nin 200 years", 10.8, lambda r: r["CatastrophicTotal"]),
                                                 ("≥10 cm objects in LEO,\nchange after 50 years (%)", 0.0, g50)]):
         for sp in ("top", "right"): ax.spines[sp].set_visible(False)
-        vals = [legend_v, fn(old), fn(new), np.mean([fn(c) for c in cubes]) if cubes else np.nan]
-        cols = [GREEN, MUTE, BLUE, ORANGE]
-        ax.bar(range(4), vals, color=cols, width=0.62)
+        vals = [legend_v, fn(new), np.mean([fn(c) for c in cubes]) if cubes else np.nan]
+        cols = [GREEN, BLUE, ORANGE]
+        ax.bar(range(3), vals, color=cols, width=0.58)
         if cubes:
             cv = [fn(c) for c in cubes]
-            ax.errorbar(3, np.mean(cv), yerr=[[np.mean(cv) - min(cv)], [max(cv) - np.mean(cv)]], fmt="none", ecolor=INK, capsize=3, lw=1)
+            ax.errorbar(2, np.mean(cv), yerr=[[np.mean(cv) - min(cv)], [max(cv) - np.mean(cv)]], fmt="none", ecolor=INK, capsize=3, lw=1)
         for k, v in enumerate(vals):
             if np.isfinite(v):
-                ax.text(k - (0.22 if k == 3 else 0), max(v, 0) + (0.02 * max(abs(x) for x in vals if np.isfinite(x)) + 0.3), f"{v:.1f}" if k != 0 or title.startswith("cat") else "≈0",
-                        ha="center", va="bottom", fontsize=7.5, weight="bold", color=INK)
-        ax.set_xticks(range(4)); ax.set_xticklabels(labels, fontsize=7); ax.tick_params(axis="y", labelsize=7)
-        ax.set_title(title, fontsize=8, color=INK); ax.axhline(0, color=MUTE, lw=0.8)
-    tag(f, f"1 Jan 2006 catalog, no launches or explosions, ≥10 cm only · cube: {len(cubes)} seeds")
+                ax.text(k - (0.2 if k == 2 else 0), max(v, 0) + (0.02 * max(abs(x) for x in vals if np.isfinite(x)) + 0.3), f"{v:.1f}" if k != 0 or title.startswith("cat") else "≈0",
+                        ha="center", va="bottom", fontsize=8, weight="bold", color=INK)
+        ax.set_xticks(range(3)); ax.set_xticklabels(labels, fontsize=7.5); ax.tick_params(axis="y", labelsize=7.5)
+        ax.set_title(title, fontsize=8.5, color=INK); ax.axhline(0, color=MUTE, lw=0.8)
+    tag(f, f"2006 catalog · no launches or explosions · ≥10 cm · cube: {len(cubes)} seeds")
     save(f, "deck_benchmark.png")
