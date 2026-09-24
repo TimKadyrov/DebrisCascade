@@ -153,3 +153,24 @@ ax.text(99, 1.04, "×1 = held flat", color=MUTE, fontsize=8.5, ha="right", va="b
 ax.legend(loc="upper right", fontsize=9, frameon=False)
 tag(f, "box model · 50 years · removals from year 0")
 save(f, "deck_removal.png")
+
+# --- Yardstick: every source on one metric (extra belt objects >=10 cm after 50 yr vs adding nothing) ---
+bb = CW["baseline"]["beltTrackable"]; b0, bEnd = bb[0], bb[-1]
+gb = dict(zip(CW["tipping"]["rates"], CW["tipping"]["growthBelt"])); BR = CW["barrels"]
+YARD = [("1 barrel of nails (832 kg)", (BR["ratioBelt"][0] - 1) * bEnd, AMBER),
+        ("1 ASAT strike on a 1 t satellite", (CW["asat"]["ratioBelt"] - 1) * bEnd, ORANGE),
+        ("any number of barrels (ceiling)", (max(BR["ratioBelt"]) - 1) * bEnd, AMBER),
+        ("50 satellites + rocket bodies a year\ninjected, never deorbited", gb[50] * b0 - bEnd, RED),
+        ("500 satellites + rocket bodies a year\ninjected, never deorbited", gb[500] * b0 - bEnd, RED)]
+f, ax = fig(11.56, 3.89, [0.30, 0.16, 0.66, 0.80])
+ys = np.arange(len(YARD))[::-1]
+ax.barh(ys, [v for _, v, _ in YARD], color=[c for _, _, c in YARD], height=0.62)
+ax.set_xscale("log"); ax.set_xlim(5, 5e6)
+ax.set_yticks(ys); ax.set_yticklabels([n for n, _, _ in YARD], fontsize=10)
+ax.xaxis.set_major_formatter(FuncFormatter(kfmt)); ax.tick_params(axis="x", labelsize=9)
+ax.tick_params(axis="y", length=0); ax.spines["left"].set_visible(False)
+ax.set_xlabel(f"extra objects ≥10 cm in the 700–1,100 km belt after 50 years  (vs adding nothing: {kfmt(bEnd)})", fontsize=10)
+for y, (_, v, c) in zip(ys, YARD):
+    ax.text(v * 1.25, y, f"+{float(f'{v:.2g}'):,.0f}", va="center", fontsize=10, weight="bold", color=INK)
+tag(f, "box model · everything at 900 km (ASAT 865 km)")
+save(f, "deck_yardstick.png")
