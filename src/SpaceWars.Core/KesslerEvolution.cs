@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace SpaceWars.Core;
 
@@ -94,6 +95,16 @@ public sealed class KesslerEvolution
     /// </summary>
     public double ExplosionScale { get; init; } = 0.25;
     private double _explPerKgSec = -1;   // per-kg explosion rate, calibrated on the first step
+
+    /// <summary>
+    /// Active debris removal: large intact objects taken out of orbit per year, from the start of the
+    /// run. Each removal takes the object that matters most — the highest mass × collision rate, the
+    /// selection criterion of NASA's LEGEND removal studies — so heavy derelicts in the dense belt go
+    /// first. Removed objects leave LEO without fragments (and no longer explode). 0 = none.
+    /// </summary>
+    public double RemovalsPerYear { get; init; } = 0.0;
+    /// <summary>Objects removed so far in this model's run.</summary>
+    public double RemovalsTotal { get; private set; }
 
     /// <summary>Altitude band [km] reported as the "belt" (<see cref="EvolutionResult.BeltTrackableObjects"/>).</summary>
     public double BeltLoKm { get; init; } = 700;
@@ -359,7 +370,37 @@ public sealed class KesslerEvolution
 
         DragMigrate(dtSec);
         ApplyLaunch(dtSec);
+        ApplyRemoval(dtSec);
         return catastrophic;
+    }
+
+    /// <summary>
+    /// Remove this step's share of <see cref="RemovalsPerYear"/> from the intact (shell, class) cells
+    /// with the highest per-object mass × collision rate, highest first.
+    /// </summary>
+    private void ApplyRemoval(double dtSec)
+    {
+        double budget = RemovalsPerYear * dtSec / (365.25 * Constants.SecondsPerDay);
+        if (budget <= 0) return;
+        var cells = new List<(double Score, int S, int C)>();
+        for (int s = 0; s < _nShell; s++)
+        {
+            double V = _volM3[s];
+            for (int c = IntactClassStart; c < SizeClassCount; c++)
+            {
+                if (_n[s, c] <= 0) continue;
+                double rate = 0;   // collisions per second for one object of class c in shell s
+                for (int k = 0; k < _nc; k++)
+                    rate += _n[s, k] / V * Math.Pow(Math.Sqrt(_cls[c].AreaM2) + Math.Sqrt(_cls[k].AreaM2), 2.0) * RelVelMetersPerSec;
+                cells.Add((_cls[c].MassKg * rate, s, c));
+            }
+        }
+        foreach (var (_, s, c) in cells.OrderByDescending(x => x.Score))
+        {
+            double take = Math.Min(budget, _n[s, c]);
+            _n[s, c] -= take; RemovalsTotal += take; budget -= take;
+            if (budget <= 0) break;
+        }
     }
 
     private void ApplyLaunch(double dtSec)

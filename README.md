@@ -91,6 +91,9 @@ export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # credentials read 
   intact mass) and the breakup model's explosion law N(>Lc) = 6·S·Lc^-1.6 with `ExplosionScale`
   S = 0.25 (~60 fragments ≥10 cm per event, the average event; S = 1 is a large rocket-stage
   explosion). `--deck` reports the sensitivity to both.
+- Active debris removal: `RemovalsPerYear` takes large intact objects out of orbit, highest
+  mass × collision rate first (the LEGEND selection criterion); `--deck` reports how many a year
+  hold the belt flat. Both explosion and removal rates are fields in the WPF tool.
 - Box model uses a well-mixed shell assumption; the conjunction Cube method is geometrically
   faithful (real cross-shell crossings) BUT `--calibrate` shows its *absolute* rate is
   cube-size-dependent with super-particles (λ∝1/V_cube variance), so it is **not quotable** as

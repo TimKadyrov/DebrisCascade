@@ -168,6 +168,36 @@ public static class DeckExport
             };
         }).ToArray();
 
+        // --- active debris removal: belt >=10 cm growth vs removals/yr, and removals to hold it flat ---
+        log("  debris removal ...");
+        double BeltGrowth(double launches, double removals, double explosions = -1)
+        {
+            var m = new KesslerEvolution(nail) { LaunchRatePerYear = launches, LaunchAltKm = BeltAltKm, RemovalsPerYear = removals,
+                                                 ExplosionsPerYear = explosions < 0 ? new KesslerEvolution(nail).ExplosionsPerYear : explosions };
+            m.SeedFromCatalog(cat);
+            var r = m.Run(Horizon, Dt);
+            return r.BeltTrackableObjects[^1] / r.BeltTrackableObjects[0];
+        }
+        double RemovalsToHoldFlat(double launches, double explosions = -1)
+        {
+            if (BeltGrowth(launches, 0, explosions) <= 1) return 0;
+            double lo = 0, hi = 2000;
+            if (BeltGrowth(launches, hi, explosions) > 1) return -1;
+            for (int it = 0; it < 14; it++) { double mid = 0.5 * (lo + hi); if (BeltGrowth(launches, mid, explosions) > 1) lo = mid; else hi = mid; }
+            return 0.5 * (lo + hi);
+        }
+        double[] removalRates = { 0, 2, 5, 10, 20, 50, 100 };
+        var removal = new
+        {
+            removalsPerYear = removalRates,
+            beltGrowthNoLaunches = removalRates.Select(r => BeltGrowth(0, r)).ToArray(),
+            beltGrowthAt50Launches = removalRates.Select(r => BeltGrowth(50, r)).ToArray(),
+            toHoldFlatNoLaunches = RemovalsToHoldFlat(0),
+            toHoldFlatAt50Launches = RemovalsToHoldFlat(50),
+            toHoldFlatNoLaunchesNoExplosions = RemovalsToHoldFlat(0, 0),
+            beltGrowthNoLaunchesNoExplosions = BeltGrowth(0, 0, 0),
+        };
+
         // --- per-satellite hazard by altitude (0 launches), and drag persistence ---
         log("  hazard by altitude & persistence ...");
         var hz = Box(0);
@@ -217,6 +247,7 @@ public static class DeckExport
         {
             generatedUtc = DateTime.UtcNow, horizonYears = Horizon, beltAltKm = BeltAltKm, nailsPerBarrel,
             explosionsPerYear = new KesslerEvolution(nail).ExplosionsPerYear, explosionScale = new KesslerEvolution(nail).ExplosionScale, explosionSensitivity = explosions,
+            removal,
             catalog, physics, conventions = perConv, usability, lowEvent,
             ensembles = new { discreteAll = dis, conjunctionAll = con, discreteTrackable = disT, conjunctionTrackable = conT, discreteBelt = disB, conjunctionBelt = conB },
         };

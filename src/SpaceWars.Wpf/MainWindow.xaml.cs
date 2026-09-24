@@ -63,20 +63,26 @@ public partial class MainWindow : Window
 
     private ScenarioInputs? ReadInputs()
     {
-        try
+        // TryParse, not Parse: a bad field is reported by name instead of throwing a FormatException.
+        string? bad = null;
+        double D(TextBox t)
         {
-            double D(TextBox t) => double.Parse(t.Text, CultureInfo.InvariantCulture);
-            return new ScenarioInputs
-            {
-                AltKm = D(AltKm), IncDeg = D(IncDeg), NailCount = (int)D(NailCount),
-                NailLengthMm = D(NailLen), NailDiameterMm = D(NailDia),
-                DispersalSigmaMS = D(SigmaMS), RelVelMS = D(RelVelMS),
-                LaunchRatePerYear = D(LaunchRate), LaunchAltKm = D(LaunchAlt),
-                Responsive = Responsive.IsChecked == true, LossTolerance = D(LossTol),
-                SolarActivity = D(Solar), HorizonYears = D(Horizon),
-            };
+            if (double.TryParse(t.Text, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out double v)) return v;
+            bad ??= t.Name; return 0;
         }
-        catch { ResultsBox.Text = "Invalid input — please check the numeric fields."; return null; }
+        var inputs = new ScenarioInputs
+        {
+            AltKm = D(AltKm), IncDeg = D(IncDeg), NailCount = (int)D(NailCount),
+            NailLengthMm = D(NailLen), NailDiameterMm = D(NailDia),
+            DispersalSigmaMS = D(SigmaMS), RelVelMS = D(RelVelMS),
+            LaunchRatePerYear = D(LaunchRate), LaunchAltKm = D(LaunchAlt),
+            Responsive = Responsive.IsChecked == true, LossTolerance = D(LossTol),
+            ExplosionsPerYear = D(Explosions), RemovalsPerYear = D(Removals),
+            SolarActivity = D(Solar), HorizonYears = D(Horizon),
+        };
+        if (bad is null) return inputs;
+        ResultsBox.Text = $"Invalid number in field '{bad}' — use digits with '.' as the decimal point.";
+        return null;
     }
 
     private async Task RunAsync(string label, Func<CatalogBundle, ScenarioInputs, (string text, Action draw)> work)

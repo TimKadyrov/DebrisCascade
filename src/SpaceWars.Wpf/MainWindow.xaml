@@ -85,6 +85,10 @@
                     <CheckBox x:Name="Responsive" Content="Responsive launch (operators quit)"/>
                     <TextBlock Style="{StaticResource Lbl}" Text="Loss tolerance (fraction/yr)"/>
                     <TextBox x:Name="LossTol" Text="0.02"/>
+                    <TextBlock Style="{StaticResource Lbl}" Text="Explosions (per yr, 0 = none)"/>
+                    <TextBox x:Name="Explosions" Text="4"/>
+                    <TextBlock Style="{StaticResource Lbl}" Text="Debris removal (objects/yr, riskiest first)"/>
+                    <TextBox x:Name="Removals" Text="0"/>
                     <TextBlock Style="{StaticResource Lbl}" Text="Solar activity (0.5 min .. 4 max)"/>
                     <TextBox x:Name="Solar" Text="1.0"/>
                     <TextBlock Style="{StaticResource Lbl}" Text="Horizon (years)"/>

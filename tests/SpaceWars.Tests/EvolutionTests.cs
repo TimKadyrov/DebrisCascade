@@ -58,6 +58,21 @@ public class EvolutionTests
     }
 
     [Fact]
+    public void Removal_TakesTheRequestedCount_AndSlowsBeltGrowth()
+    {
+        var cat = SynthCatalog(4000, 750, 1050);
+        var none = new KesslerEvolution(new NailSpec());
+        var adr = new KesslerEvolution(new NailSpec()) { RemovalsPerYear = 10 };
+        none.SeedFromCatalog(cat); adr.SeedFromCatalog(cat);
+        var a = none.Run(horizonYears: 20, dtDays: 10);
+        var b = adr.Run(horizonYears: 20, dtDays: 10);
+
+        Assert.Equal(200, adr.RemovalsTotal, 1);   // 10 a year for 20 years
+        Assert.Equal(0, none.RemovalsTotal);
+        Assert.True(b.BeltTrackableObjects[^1] < a.BeltTrackableObjects[^1], "removal should slow belt growth");
+    }
+
+    [Fact]
     public void Run_EndsExactlyOnTheHorizon()
     {
         var m = new KesslerEvolution(new NailSpec());

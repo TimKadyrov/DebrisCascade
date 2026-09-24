@@ -29,6 +29,24 @@ public sealed class Tle
     public OrbitalElements ToElements() => OrbitalElements.FromMeanMotionRevPerDay(
         MeanMotionRevPerDay, Eccentricity, InclinationRad, RaanRad, ArgPerigeeRad, MeanAnomalyRad);
 
+    /// <summary>
+    /// The 5-character catalog-number field: plain digits, or "Alpha-5" for numbers ≥ 100,000 — a
+    /// letter for the leading two digits (A = 10 … Z = 33, skipping I and O) plus four digits, so
+    /// A0000 = 100000 and Z9999 = 339999. Space-Track uses Alpha-5 for every newer object.
+    /// </summary>
+    public static int ParseCatalogNumber(string field)
+    {
+        field = field.Trim();
+        if (field.Length == 5 && char.IsAsciiLetter(field[0]))
+        {
+            char c = char.ToUpperInvariant(field[0]);
+            if (c is 'I' or 'O') throw new FormatException($"Invalid Alpha-5 catalog number '{field}'.");
+            int lead = c - 'A' + 10 - (c > 'I' ? 1 : 0) - (c > 'O' ? 1 : 0);
+            return lead * 10_000 + int.Parse(field[1..], NumberStyles.None, Inv);
+        }
+        return int.Parse(field, NumberStyles.None, Inv);
+    }
+
     /// <summary>Parse a single TLE from its two data lines (and an optional name).</summary>
     public static Tle Parse(string line1, string line2, string? name = null)
     {
@@ -37,7 +55,7 @@ public sealed class Tle
         if (line1[0] != '1' || line2[0] != '2')
             throw new FormatException("TLE lines must start with '1' and '2'.");
 
-        int norad = int.Parse(line2.Substring(2, 5).Trim(), Inv);
+        int norad = ParseCatalogNumber(line2.Substring(2, 5));
 
         // Epoch: 2-digit year + fractional day-of-year.
         int yy = int.Parse(line1.Substring(18, 2), Inv);

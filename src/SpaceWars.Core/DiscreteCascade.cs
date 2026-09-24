@@ -45,6 +45,12 @@ public sealed class DiscreteCascade
     private const double IntactMinMassKg = 50.0;
     private double _explPerKgSec = -1;
     public double ExplosionsTotal { get; private set; }
+    /// <summary>Active debris removal: large intact objects (≥50 kg) removed per year, highest mass ×
+    /// collision rate first (the LEGEND criterion); they leave LEO without fragments. See KesslerEvolution.</summary>
+    public double RemovalsPerYear { get; init; } = 0.0;
+    public double RemovalsTotal { get; private set; }
+    private double _removalAccrual;
+
 
     /// <summary>Ongoing launch traffic: intact objects added per year (the Kessler driver).</summary>
     public double LaunchRatePerYear { get; set; } = 0.0;
@@ -304,9 +310,44 @@ public sealed class DiscreteCascade
         }
 
         ApplyExplosions(dtSec);
+        ApplyRemoval(dtSec);
         DragStep(dtSec);
         ApplyLaunch(dtSec);
         return catastrophic;
+    }
+
+    /// <summary>Remove this step's share of <see cref="RemovalsPerYear"/>: intact objects ranked by mass ×
+    /// their collision rate in their 50 km shell (well-mixed, like the box model), highest first.</summary>
+    private void ApplyRemoval(double dtSec)
+    {
+        if (RemovalsPerYear <= 0) return;
+        _removalAccrual += RemovalsPerYear * dtSec / (365.25 * Constants.SecondsPerDay);
+        if (_removalAccrual < 1.0) return;
+        const int nShell = 36; const double minAlt = 200, bin = 50, reM = 6_378_135.0;
+        var W = new double[nShell]; var WA = new double[nShell]; var WsA = new double[nShell];
+        int Shell(int i) { double alt = _a[i] - Constants.EarthRadiusKm; int s = (int)Math.Floor((alt - minAlt) / bin); return s >= 0 && s < nShell ? s : -1; }
+        for (int i = 0; i < _w.Count; i++)
+        {
+            if (!_alive[i]) continue; int s = Shell(i); if (s < 0) continue;
+            W[s] += _w[i]; WA[s] += _w[i] * _area[i]; WsA[s] += _w[i] * _sqrtA[i];
+        }
+        var cand = new List<(double Score, int I)>();
+        for (int i = 0; i < _w.Count; i++)
+        {
+            if (!_alive[i] || _isNail[i] || _mass[i] < IntactMinMassKg) continue;
+            int s = Shell(i); if (s < 0) continue;
+            double rLo = reM + (minAlt + s * bin) * 1000, rHi = rLo + bin * 1000;
+            double V = 4.0 / 3.0 * Math.PI * (rHi * rHi * rHi - rLo * rLo * rLo);
+            double rate = (_area[i] * W[s] + WA[s] + 2 * _sqrtA[i] * WsA[s]) / V;   // ∝ collisions/s per object
+            cand.Add((_mass[i] * rate, i));
+        }
+        foreach (var (_, i) in cand.OrderByDescending(c => c.Score))
+        {
+            if (_removalAccrual <= 1e-9) break;
+            double take = Math.Min(_removalAccrual, _w[i]);
+            _w[i] -= take; if (_w[i] <= 1e-9) _alive[i] = false;
+            _removalAccrual -= take; RemovalsTotal += take;
+        }
     }
 
     private void ApplyLaunch(double dtSec)
