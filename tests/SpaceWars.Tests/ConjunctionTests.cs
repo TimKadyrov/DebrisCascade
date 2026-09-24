@@ -122,4 +122,21 @@ public class ConjunctionTests
         Assert.True(r.CatastrophicPerYear.Sum() > 0);
         Assert.All(r.TotalObjects, v => Assert.True(double.IsFinite(v)));
     }
+
+    [Fact]
+    public void Fragments_DecayUnderDrag_LikeTheBoxModel()
+    {
+        // One breakup at 900 km, collisions off: 10-100 cm fragments from 900 km live ~50-80 years, so after 100
+        // years most are gone in both engines. (A drag bug once froze circularised fragments at their old perigee.)
+        var box = new KesslerEvolution(new NailSpec()) { CollisionsOff = true, ExplosionsPerYear = 0 };
+        box.InjectBreakup(900, 1550, 10);
+        var br = box.Run(100, 10);
+        var cube = new ConjunctionCascade(seed: 1) { CollisionsOff = true, ExplosionsPerYear = 0, FragmentSplit = 64 };
+        cube.InjectBreakup(900, 98, 1550, 10);
+        double c0 = cube.TotalTrackable();
+        var cr = cube.Run(100, 60);
+        double boxLeft = br.TrackableObjects[^1] / br.TrackableObjects[0], cubeLeft = cr.TrackableObjects[^1] / c0;
+        Assert.InRange(cubeLeft, 0.05, 0.8);
+        Assert.InRange(cubeLeft / boxLeft, 0.4, 2.5);
+    }
 }

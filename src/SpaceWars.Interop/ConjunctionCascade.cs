@@ -236,6 +236,24 @@ public sealed class ConjunctionCascade
         }
     }
 
+    /// <summary>Diagnostics: switch collisions off (drag, explosions and removal still run).</summary>
+    public bool CollisionsOff { get; init; } = false;
+
+    /// <summary>Inject one breakup — a <paramref name="targetKg"/> object hit by a <paramref name="projectileKg"/> one — on a
+    /// circular orbit at the given altitude and inclination; its fragments start at the collision point.</summary>
+    public void InjectBreakup(double altKm, double incDeg, double targetKg, double projectileKg, double vrelMS = 10_000)
+    {
+        var el = Circular(altKm, incDeg * Constants.DegToRad, 0, 0);
+        el.ComputeSecularRates();
+        var (pos, vel) = el.StateAt(0);
+        bool cat = Lethality.IsCatastrophic(projectileKg, vrelMS, targetKg);
+        double meff = BreakupModel.EffectiveMass(targetKg, projectileKg, vrelMS);
+        double avail = cat ? targetKg + projectileKg : Math.Min(targetKg, 50.0 * projectileKg);
+        var cc = new double[FragMass.Length];
+        BreakupModel.DistributeFragments(meff, avail, LcEdges, FragMass, cc);
+        SpawnFragments(pos, vel, cc, 1.0);
+    }
+
     public void InjectBarrel(IReadOnlyList<OrbitalElements> nailCloud, NailSpec nail, int superParticles, int totalNails)
     {
         int step = Math.Max(1, nailCloud.Count / superParticles);
@@ -315,7 +333,7 @@ public sealed class ConjunctionCascade
             else { long r = _rng.NextInt64(seen); if (r < MaxHitsPerStep) hits[(int)r] = h; }
         }
 
-        for (int sub = 0; sub < SubSamples; sub++)
+        for (int sub = 0; sub < SubSamples && !CollisionsOff; sub++)
         {
             double tSample = _simSec + _rng.NextDouble() * 5400.0; // random phase within ~one orbit
             double[] st = PropagateState(tSample);
@@ -360,7 +378,7 @@ public sealed class ConjunctionCascade
         const double selfVrel = 10_000.0;
         for (int i = 0; i < _els.Count; i++)
         {
-            if (!_alive[i] || _w[i] <= 1) continue;
+            if (!_alive[i] || _w[i] <= 1 || CollisionsOff) continue;
             if (TrackedOnlyCollisions && !IsTrackedSize(i)) continue;
             var el = _els[i]; if (el.MeanMotion <= 0) continue;
             double alt = el.SemiMajorAxis - Constants.EarthRadiusKm;
@@ -523,16 +541,27 @@ public sealed class ConjunctionCascade
         }
     }
 
+    /// <summary>
+    /// Each size class of a breakup is carried by up to this many super-particles, each with its own breakup Δv, so
+    /// the cloud's spread in altitude (≈ ±200 km) is represented. One particle per class put hundreds of fragments on
+    /// a single orbit, which then decayed all at once or not at all.
+    /// </summary>
+    public int FragmentSplit { get; init; } = 8;
+
     private void SpawnFragments(Vec3 pos, Vec3 vel, double[] cnt, double eventFraction)
     {
         int nc = cnt.Length;
         for (int c = 0; c < nc && _w.Count < HardCap; c++)
         {
             double weight = cnt[c] * eventFraction; if (weight < 1e-6) continue;
-            var dv = new Vec3(FragmentDeltaVKmS * NextGaussian(), FragmentDeltaVKmS * NextGaussian(), FragmentDeltaVKmS * NextGaussian());
-            var frag = OrbitalElements.FromStateVector(pos, vel + dv);
-            if (frag.Eccentricity >= 1 || frag.SemiMajorAxis <= Constants.EarthRadiusKm) continue;
-            Add(frag, FragMass[c], FragArea[c], weight, nail: false);
+            int n = Math.Clamp((int)Math.Ceiling(weight), 1, Math.Max(1, FragmentSplit));
+            for (int k = 0; k < n && _w.Count < HardCap; k++)
+            {
+                var dv = new Vec3(FragmentDeltaVKmS * NextGaussian(), FragmentDeltaVKmS * NextGaussian(), FragmentDeltaVKmS * NextGaussian());
+                var frag = OrbitalElements.FromStateVector(pos, vel + dv);
+                if (frag.Eccentricity >= 1 || frag.SemiMajorAxis <= Constants.EarthRadiusKm) continue;
+                Add(frag, FragMass[c], FragArea[c], weight / n, nail: false);
+            }
         }
     }
 
@@ -562,12 +591,15 @@ public sealed class ConjunctionCascade
             var el = _els[i];
             // Orbit-averaged drag: an eccentric orbit loses energy mostly at perigee, so its apogee comes down
             // while the perigee holds (the circular formula at the mean altitude would barely move it).
-            double rp = el.SemiMajorAxis * (1 - el.Eccentricity);
+            double e0 = el.Eccentricity, rp = el.SemiMajorAxis * (1 - e0);
             if (rp <= reentryA) { _alive[i] = false; continue; }
-            double rate = -AtmosphericDrag.OrbitAveragedDecayRateKmPerSec(el.SemiMajorAxis, el.Eccentricity, _area[i] / _mass[i], SolarActivity);
-            double a = Math.Max(rp, el.SemiMajorAxis - rate * dtSec);
+            double rate = -AtmosphericDrag.OrbitAveragedDecayRateKmPerSec(el.SemiMajorAxis, e0, _area[i] / _mass[i], SolarActivity);
+            double a = el.SemiMajorAxis - rate * dtSec;
+            // Eccentric: the perigee holds and the apogee comes down until the orbit is circular. Circular: the whole
+            // orbit comes down. (Clamping a circular orbit at its old perigee would stop its decay for good.)
+            if (e0 < 1e-3 || a <= rp) { if (e0 >= 1e-3) a = rp; el.Eccentricity = 0; }
+            else el.Eccentricity = 1 - rp / a;
             if (a <= reentryA) { _alive[i] = false; continue; }
-            el.Eccentricity = Math.Max(0, 1 - rp / a);
             el.SemiMajorAxis = a; el.MeanMotion = Math.Sqrt(Constants.Mu / (a * a * a)); el.ComputeSecularRates();
             _els[i] = el;
         }

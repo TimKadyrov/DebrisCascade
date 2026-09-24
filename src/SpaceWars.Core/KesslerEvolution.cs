@@ -61,6 +61,8 @@ public sealed class KesslerEvolution
     /// default — the modelled 1–10 cm field and nails collide too. Used for like-for-like NASA benchmarks.
     /// </summary>
     public bool TrackedOnlyCollisions { get; init; } = false;
+    /// <summary>Diagnostics: switch collisions off (drag, explosions, launches and removal still run).</summary>
+    public bool CollisionsOff { get; init; } = false;
     /// <summary>Catastrophic collisions so far, by shell (cumulative), and non-catastrophic ones between objects ≥10 cm.</summary>
     public double[] CatastrophicByShell => (double[])_catByShell.Clone();
     public double NonCatastrophicTrackedTotal { get; private set; }
@@ -466,7 +468,7 @@ public sealed class KesslerEvolution
             double V = _volM3[s];
             for (int j = 0; j < _nc; j++)
             {
-                double nj = _n[s, j] + E[s, j]; if (nj <= 0) continue;
+                double nj = _n[s, j] + E[s, j]; if (nj <= 0 || CollisionsOff) continue;
                 for (int k = j; k < _nc; k++)
                 {
                     double nk = _n[s, k] + E[s, k]; if (nk <= 0) continue;
