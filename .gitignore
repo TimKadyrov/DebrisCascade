@@ -25,3 +25,5 @@ Thumbs.db
 # Deck working backups (safety copies)
 *.bak.pptx
 *.bak[0-9].pptx
+# Office lock files (a document is open)
+~$*
