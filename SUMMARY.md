@@ -29,8 +29,8 @@ that. The ~10⁴-fragment clouds that drive a cascade come from large-on-large c
 260 kg on 260 kg makes ~29,000 fragments ≥1 cm. Nails instead flood the lethal-but-untrackable
 1–10 cm field. Dumped at 900 km, ~100–240 barrels double that field within 50 years (the range
 brackets how much debris small impacts throw off: the breakup model as written vs NASA's LEGEND
-convention). But no number of barrels doubles the ≥10 cm belt: even 1,000 barrels add only
-~16%. One ASAT strike on a 1 t satellite at 865 km adds as many ≥10 cm objects as ~23 barrels.
+convention). But no number of barrels doubles the ≥10 cm belt: it tops out ~16% above the
+no-barrel run after 50 years, reached by ~300 barrels and not raised by more. One ASAT strike on a 1 t satellite at 865 km adds as many ≥10 cm objects as ~23 barrels.
 
 ## Altitude is the whole story
 
