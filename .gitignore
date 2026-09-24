@@ -16,6 +16,13 @@ data/spacetrack_satcat.csv
 # Source papers: copyrighted, not redistributed (links in docs/REFERENCES.md)
 docs/*.pdf
 
+# Single-run CLI outputs (--evolve, --cascade, --conjunction, --charts); the committed results are
+# data/deck_numbers.json and data/benchmark_2006.json
+data/evolution.json
+data/cascade.json
+data/conjunction.json
+data/charts.json
+
 # Generated visualization builds (concatenated from parts + data)
 viz/index.html
 viz/charts.html

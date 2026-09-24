@@ -73,7 +73,8 @@ export SPACETRACK_USER=you@example.com SPACETRACK_PASS=...   # or a generic Wind
 | `--tipping` | launch-rate sweep and break-even rate |
 | `--barrel-threshold` | how many barrels tip a band |
 | `--calibrate` | cube vs box collision rates (all and catastrophic) on the production population |
-| `--charts` / `--export <file>` | write data for the visualizations |
+| `--export <file>` | write the nail-cloud scene for the 3D globe (`data/scene.json`) |
+| `--charts` | single-run timeline, tipping, responsive and barrel series → `data/charts.json` (not committed) |
 | `--deck` | every number the presentation quotes → `data/deck_numbers.json` (charts: `viz/render_deck_charts.py`) |
 | `--active-only` | use CelesTrak's active satellites instead of the full Space-Track on-orbit catalog |
 | `--calibrate-speed` / `--calibrate-comoving` | cube rate by encounter speed (real vs scrambled planes); what the slow pairs are |
@@ -118,8 +119,8 @@ default inputs and exits.
 
 - **Nail Cloud Orbital Decay** — interactive 3D globe (three.js): the cloud spreading and
   decaying over a 3-year timeline. Built from `viz/part1.html + data/scene.json + viz/part2.html`.
-- **Kessler Analysis** — four-chart summary (Chart.js). Built from
-  `viz/charts_part1.html + data/charts.json + viz/charts_part2.html`.
+- **Presentation charts** — `viz/render_deck_charts.py` and `viz/render_extreme.py` draw every chart
+  in the presentation from `data/deck_numbers.json` into `viz/frames/`.
 
 ## Key assumptions & caveats
 
