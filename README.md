@@ -121,7 +121,7 @@ cube's seed-to-seed scatter (one barrel adds under 1% to the belt).
 | Operators quit | selected | launching throughout vs operators throttling back and quitting |
 | Working satellites | selected | never deorbited / poor / today's practice / best / your settings, at 50 and 500 a year |
 | Removal | selected | belt growth vs large dead objects removed a year, with nothing added and with traffic |
-| Globe | cube | every object of one cube run around the Earth every 5 years: intact objects, debris ≥10 cm coloured by altitude, nails, working satellites, and 1–10 cm debris on request; drag to turn, slide through the years |
+| Globe | cube | every object of one cube run around the Earth, year by year: intact objects, debris ≥10 cm coloured by altitude, nails, working satellites, and 1–10 cm debris on request; drag to turn, slide through the years |
 | Usability by altitude | box | collision risk per satellite by altitude (today and with the barrel, year slider), the belt, the walk-away line, and how long a fragment stays (right axis) |
 | Scale check (barrels) | box | belt and all-object change vs number of barrels at the release altitude, with one ASAT strike for scale |
 | Comparison | box | barrel, ASAT and traffic on one measure: extra belt objects after the horizon |

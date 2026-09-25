@@ -598,7 +598,8 @@ public partial class MainWindow : Window
 
     private async void RunGlobe(object s, RoutedEventArgs e) => await RunAsync("Globe (cube)", (cat, i) =>
     {
-        var years = Enumerable.Range(0, (int)Math.Floor(i.HorizonYears / 5) + 1).Select(k => k * 5.0)
+        // A snapshot every year: the slider steps one year at a time.
+        var years = Enumerable.Range(0, (int)Math.Floor(i.HorizonYears) + 1).Select(k => (double)k)
                               .Append(Math.Round(i.HorizonYears)).Distinct().ToArray();
         var snaps = Scenarios.GlobeRun(cat.Objects, i, 1, years, _progress);
         var sb = new StringBuilder($"One cube-engine run (seed 1): {Launches(i)}; barrel of {i.NailCount:N0} nails at {i.AltKm:F0} km in year 0.\n");
@@ -608,7 +609,8 @@ public partial class MainWindow : Window
         for (int k = 0; k < snaps.Count; k++)
         {
             var c = GlobeCounts(snaps[k]);
-            sb.AppendLine($"  {snaps[k].Year,4:F0} | {c.Intact,13:N0} | {c.Working,7:N0} | {c.Debris,13:N0} | {c.Belt,22:N0} | {c.Small,14:N0} | {c.Nails:N0}");
+            if ((int)Math.Round(snaps[k].Year) % 5 == 0 || k == snaps.Count - 1)   // the table every 5 years; the slider has them all
+                sb.AppendLine($"  {snaps[k].Year,4:F0} | {c.Intact,13:N0} | {c.Working,7:N0} | {c.Debris,13:N0} | {c.Belt,22:N0} | {c.Small,14:N0} | {c.Nails:N0}");
             stats[k] = string.Join(Environment.NewLine, $"objects ≥10 cm: {c.Intact + c.Debris:N0}", $"  in 700–1,100 km now: {c.Belt:N0}",
                 $"working satellites: {c.Working:N0}", $"nails: {c.Nails:N0}", $"debris 1–10 cm: {c.Small:N0}");
         }

@@ -113,9 +113,11 @@ public static class Scenarios
 
         int withRcs = 0;
         var objs = new List<CatalogObject>();
+        // Every object at one common instant, the newest epoch in the catalog (see Tle.ToElementsAt).
+        var catalogUtc = tles.Count > 0 ? tles.Max(t => t.EpochUtc) : DateTime.UtcNow;
         foreach (var t in tles)
         {
-            var el = t.ToElements();
+            var el = t.ToElementsAt(catalogUtc);
             if (!(el.PerigeeAltitude < 2000 && el.PerigeeAltitude > 100)) continue;
             double mass = 180, area = 1.78; bool intact = true; string type = full ? "UNK" : "PAY";
             if (satcat.TryGetValue(t.NoradId, out var rec))

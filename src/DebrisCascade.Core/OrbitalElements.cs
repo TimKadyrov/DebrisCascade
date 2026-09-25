@@ -50,6 +50,22 @@ public struct OrbitalElements
         return el;
     }
 
+    /// <summary>
+    /// These elements moved <paramref name="tSeconds"/> along the orbit (secular J2 on Ω, ω and M), as a new epoch.
+    /// Catalog element sets each hold at their own epoch, often an equator crossing; advancing every one to a common
+    /// instant is what puts the population where it actually is at that moment.
+    /// </summary>
+    public readonly OrbitalElements AdvancedBy(double tSeconds)
+    {
+        var el = this;
+        el.Raan = Wrap(Raan + RaanDot * tSeconds);
+        el.ArgPerigee = Wrap(ArgPerigee + ArgPerigeeDot * tSeconds);
+        el.MeanAnomaly = Wrap(MeanAnomaly + MeanAnomalyDot * tSeconds);
+        return el;
+    }
+
+    private static double Wrap(double a) { a %= Constants.TwoPi; return a < 0 ? a + Constants.TwoPi : a; }
+
     /// <summary>Compute and cache the secular J2 rates from the current mean elements.</summary>
     public void ComputeSecularRates()
     {

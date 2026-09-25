@@ -30,6 +30,13 @@ public sealed class Tle
         MeanMotionRevPerDay, Eccentricity, InclinationRad, RaanRad, ArgPerigeeRad, MeanAnomalyRad);
 
     /// <summary>
+    /// The elements at <paramref name="atUtc"/> rather than at this element set's own epoch. Use one common instant
+    /// for a whole catalog: each set's epoch is often at an equator crossing, so taking every object at its own
+    /// epoch would bunch the population on the equator.
+    /// </summary>
+    public OrbitalElements ToElementsAt(DateTime atUtc) => ToElements().AdvancedBy((atUtc - EpochUtc).TotalSeconds);
+
+    /// <summary>
     /// The 5-character catalog-number field: plain digits, or "Alpha-5" for numbers ≥ 100,000 — a
     /// letter for the leading two digits (A = 10 … Z = 33, skipping I and O) plus four digits, so
     /// A0000 = 100000 and Z9999 = 339999. Space-Track uses Alpha-5 for every newer object.

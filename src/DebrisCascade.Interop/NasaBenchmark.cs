@@ -25,7 +25,7 @@ public static class NasaBenchmark
         var objs = new List<CatalogObject>();
         foreach (var t in tles)
         {
-            var el = t.ToElements();
+            var el = t.ToElementsAt(Epoch);   // every object at 1 Jan 2006, not at its own epoch
             if (!(el.PerigeeAltitude < 2000 && el.PerigeeAltitude > 100)) continue;
             double mass = 180, area = 1.78; bool intact = true; string type = "UNK";
             if (satcat.TryGetValue(t.NoradId, out var rec))
